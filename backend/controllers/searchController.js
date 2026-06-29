@@ -1,6 +1,7 @@
 import User from '../models/User.js';
 import Post from '../models/Post.js';
 import SearchQuery from '../models/SearchQuery.js';
+import ConnectionRequest from '../models/ConnectionRequest.js';
 
 // Helper to calculate profile completion
 const calculateProfileCompletion = (user) => {
@@ -25,7 +26,10 @@ export const searchDevelopers = async (req, res, next) => {
       page = 1, limit = 6, sortBy = 'newest' 
     } = req.query;
 
-    const query = { _id: { $ne: req.user._id } }; // Exclude current user
+    const query = { 
+      _id: { $ne: req.user._id },
+      role: { $nin: ['admin', 'master_admin'] }
+    }; // Exclude current user and admin accounts
 
     if (keyword) {
       const regex = new RegExp(keyword, 'i');
@@ -58,11 +62,27 @@ export const searchDevelopers = async (req, res, next) => {
     // Execute query (leaning to inject dynamic profileCompletion field)
     let developers = await User.find(query).select('-password').lean();
 
-    // Map profile completion score
-    developers = developers.map(dev => ({
-      ...dev,
-      profileCompletion: calculateProfileCompletion(dev),
-    }));
+    // Fetch all connection requests related to current user
+    const connectionRequests = await ConnectionRequest.find({
+      $or: [
+        { sender: req.user._id },
+        { receiver: req.user._id }
+      ]
+    }).lean();
+
+    // Map profile completion score and connection status
+    developers = developers.map(dev => {
+      const conn = connectionRequests.find(c => 
+        (c.sender.toString() === req.user._id.toString() && c.receiver.toString() === dev._id.toString()) ||
+        (c.receiver.toString() === req.user._id.toString() && c.sender.toString() === dev._id.toString())
+      );
+      return {
+        ...dev,
+        profileCompletion: calculateProfileCompletion(dev),
+        connectionStatus: conn ? conn.status : null,
+        connectionSender: conn ? conn.sender.toString() : null,
+      };
+    });
 
     // Filter by completion if set
     if (minCompletion) {

@@ -1,27 +1,43 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { 
-  Search as SearchIcon, Sliders, X, Loader2, Sparkles, Navigation, 
-  Briefcase, MapPin, CheckCircle, ChevronLeft, ChevronRight, Award, 
-  Trash2, TrendingUp, History, FolderGit2, RefreshCw, UserPlus, Check, Github
+  Search as SearchIcon, Sliders, X, Loader2, Navigation, 
+  MapPin, ChevronLeft, ChevronRight,
+  Trash2, TrendingUp, History, FolderGit2, UserPlus, Check, Github, Clock,
+  BadgeCheck, Star, Users, FolderOpen, Flame, Trophy, ExternalLink, Code2, ShieldCheck, Heart, Briefcase
 } from 'lucide-react';
 import api from '../services/api';
 import PostCard from '../components/PostCard';
+import { SocketContext } from '../context/SocketContext';
+import { AuthContext } from '../context/AuthContext';
+
+const SEARCH_SUGGESTIONS = [
+  'react developer',
+  'mern stack',
+  'ai engineer',
+  'backend nodejs',
+  'python data science',
+  'ui ux designer'
+];
 
 const Search = () => {
-  // Tabs
+  const { activeUsers } = React.useContext(SocketContext);
+  const { user: currentUser } = React.useContext(AuthContext);
+
   const [activeTab, setActiveTab] = useState('developers');
+  const [searchParams, setSearchParams] = useSearchParams();
 
   // Search Input State
   const [keyword, setKeyword] = useState('');
-  const [suggestions, setSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
 
   // Filters State
-  const [skillsFilter, setSkillsFilter] = useState('');
+  const [skillsFilter, setSkillsFilter] = useState(searchParams.get('skill') || '');
   const [locationFilter, setLocationFilter] = useState('');
   const [experienceFilter, setExperienceFilter] = useState('');
   const [availabilityFilter, setAvailabilityFilter] = useState('');
-  const [minCompletion, setMinCompletion] = useState(0);
+  const [verifiedOnly, setVerifiedOnly] = useState(false);
+  const [remoteOnly, setRemoteOnly] = useState(false);
   
   // Post Specific Filters
   const [projectTypeFilter, setProjectTypeFilter] = useState('');
@@ -76,9 +92,9 @@ const Search = () => {
 
       if (isDevs) {
         if (locationFilter) params.location = locationFilter;
+        if (remoteOnly) params.location = 'remote';
         if (experienceFilter) params.experience = experienceFilter;
         if (availabilityFilter) params.availability = availabilityFilter;
-        if (minCompletion > 0) params.minCompletion = minCompletion;
       } else {
         if (projectTypeFilter) params.projectType = projectTypeFilter;
         if (projectStatusFilter) params.status = projectStatusFilter;
@@ -86,27 +102,32 @@ const Search = () => {
       }
 
       const res = await api.get(endpoint, { params });
-      setResults(res.data.data);
+      
+      let data = res.data.data;
+      if (isDevs && verifiedOnly) {
+         // Mock verified filter since it's not natively supported yet
+         data = data.filter(d => d.githubProfile || d.role === 'admin');
+      }
+
+      setResults(data);
       setTotalPages(res.data.pages);
       
-      // Update history tags
       fetchMetadata();
     } catch (err) {
       console.error('Error during search execution:', err);
     } finally {
       setLoading(false);
     }
-  }, [activeTab, keyword, skillsFilter, locationFilter, experienceFilter, availabilityFilter, minCompletion, projectTypeFilter, projectStatusFilter, sortBy, page, limit]);
+  }, [activeTab, keyword, skillsFilter, locationFilter, experienceFilter, availabilityFilter, remoteOnly, verifiedOnly, projectTypeFilter, projectStatusFilter, sortBy, page, limit]);
 
   useEffect(() => {
     executeSearch();
-  }, [activeTab, page, sortBy, skillsFilter, locationFilter, experienceFilter, availabilityFilter, minCompletion, projectTypeFilter, projectStatusFilter]);
+  }, [activeTab, page, sortBy, skillsFilter, locationFilter, experienceFilter, availabilityFilter, remoteOnly, verifiedOnly, projectTypeFilter, projectStatusFilter]);
 
   useEffect(() => {
     fetchMetadata();
   }, []);
 
-  // Handle keypress
   const handleKeyDown = (e) => {
     if (e.key === 'Enter') {
       setShowSuggestions(false);
@@ -114,42 +135,30 @@ const Search = () => {
     }
   };
 
-  // Clear all filters
   const handleClearFilters = () => {
     setSkillsFilter('');
     setLocationFilter('');
     setExperienceFilter('');
     setAvailabilityFilter('');
-    setMinCompletion(0);
+    setVerifiedOnly(false);
+    setRemoteOnly(false);
     setProjectTypeFilter('');
     setProjectStatusFilter('');
     setSortBy('newest');
     setPage(1);
   };
 
-  // Re-run from history tag click
   const handleHistoryClick = (item) => {
     setKeyword(item.keyword || '');
-    if (item.filters?.skills?.length > 0) {
-      setSkillsFilter(item.filters.skills.join(', '));
-    }
-    if (item.filters?.location) {
-      setLocationFilter(item.filters.location);
-    }
-    if (item.filters?.experienceLevel) {
-      setExperienceFilter(item.filters.experienceLevel);
-    }
-    if (item.filters?.projectType) {
-      setProjectTypeFilter(item.filters.projectType);
-    }
-    if (item.filters?.status) {
-      setProjectStatusFilter(item.filters.status);
-    }
+    if (item.filters?.skills?.length > 0) setSkillsFilter(item.filters.skills.join(', '));
+    if (item.filters?.location) setLocationFilter(item.filters.location);
+    if (item.filters?.experienceLevel) setExperienceFilter(item.filters.experienceLevel);
+    if (item.filters?.projectType) setProjectTypeFilter(item.filters.projectType);
+    if (item.filters?.status) setProjectStatusFilter(item.filters.status);
     setActiveTab(item.searchType === 'developer' ? 'developers' : 'posts');
     executeSearch(item.keyword);
   };
 
-  // Connection CTA helper
   const handleConnect = async (receiverId) => {
     try {
       setConnectingId(receiverId);
@@ -162,113 +171,135 @@ const Search = () => {
     }
   };
 
+  // Mock Developer Match calculation
+  const getMatchScore = (dev) => {
+    if (!skillsFilter) return null;
+    const required = skillsFilter.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+    if (required.length === 0) return null;
+    const devSkills = (dev.skills || []).map(s => s.toLowerCase());
+    const matched = required.filter(r => devSkills.some(ds => ds.includes(r)));
+    return {
+      percentage: Math.round((matched.length / required.length) * 100),
+      matchedSkills: matched
+    };
+  };
+
   return (
-    <div className="min-h-[calc(100vh-4rem)] bg-slate-950 text-slate-100 py-10 px-4 sm:px-6 lg:px-8 relative overflow-hidden">
+    <div className="min-h-screen bg-slate-950 text-slate-100 py-10 px-4 sm:px-6 lg:px-8 relative overflow-hidden font-sans">
       {/* Background decorations */}
-      <div className="absolute top-10 left-10 w-96 h-96 bg-indigo-500/5 rounded-full blur-3xl"></div>
-      <div className="absolute bottom-20 right-20 w-96 h-96 bg-purple-500/5 rounded-full blur-3xl"></div>
+      <div className="fixed top-0 left-0 w-full h-full overflow-hidden pointer-events-none z-0">
+        <div className="absolute top-10 left-10 w-[500px] h-[500px] bg-indigo-600/5 rounded-full blur-[100px]"></div>
+        <div className="absolute bottom-20 right-20 w-[500px] h-[500px] bg-purple-600/5 rounded-full blur-[100px]"></div>
+      </div>
 
       <div className="max-w-7xl mx-auto relative z-10 space-y-6">
         
         {/* Main Header Search Bar */}
-        <div className="bg-slate-900/40 backdrop-blur-xl border border-slate-800 rounded-3xl p-6 md:p-8 space-y-6">
-          <div className="flex flex-col md:flex-row gap-4 items-center">
+        <div className="bg-slate-900/60 backdrop-blur-xl border border-white/5 rounded-3xl p-6 md:p-8 space-y-6 shadow-2xl relative z-20">
+          <div className="flex flex-col md:flex-row gap-4 items-start md:items-center">
             
-            {/* Input Wrapper */}
+            {/* Input Wrapper with Autocomplete */}
             <div className="relative w-full flex-1">
-              <span className="absolute inset-y-0 left-0 pl-4 flex items-center text-slate-500">
-                <SearchIcon size={18} />
+              <span className="absolute top-3.5 left-4 flex items-center text-slate-500">
+                <SearchIcon size={20} />
               </span>
               <input
                 type="text"
-                placeholder={activeTab === 'developers' ? "Search developers by name, bio, username..." : "Search project collaboration titles, ideas..."}
-                className="w-full pl-12 pr-4 py-3.5 bg-slate-950 border border-slate-850 rounded-2xl focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none text-slate-100 text-sm transition placeholder-slate-600"
+                placeholder={activeTab === 'developers' ? "Search React, Node, AI Engineers..." : "Search innovative projects..."}
+                className="w-full pl-12 pr-4 py-3.5 bg-slate-950/80 border border-slate-800 rounded-2xl focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none text-slate-100 text-[15px] font-medium transition shadow-inner placeholder-slate-500"
                 value={keyword}
                 onChange={(e) => setKeyword(e.target.value)}
+                onFocus={() => setShowSuggestions(true)}
+                onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
                 onKeyDown={handleKeyDown}
               />
+              
+              {showSuggestions && (
+                <div className="absolute top-full left-0 right-0 mt-2 bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden z-50">
+                  <div className="p-3 border-b border-slate-800/80">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Trending Searches</span>
+                  </div>
+                  {SEARCH_SUGGESTIONS.filter(s => s.includes(keyword.toLowerCase())).map((s, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => {
+                        setKeyword(s);
+                        executeSearch(s);
+                      }}
+                      className="w-full text-left px-4 py-3 text-sm text-slate-300 hover:bg-slate-800 hover:text-indigo-400 transition flex items-center gap-2"
+                    >
+                      <TrendingUp size={14} className="text-slate-500" /> {s}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
-            {/* Actions button */}
             <div className="flex gap-3 w-full md:w-auto">
               <button 
                 onClick={() => executeSearch()}
-                className="flex-1 md:flex-none px-6 py-3.5 bg-indigo-650 hover:bg-indigo-550 text-white text-xs font-bold rounded-2xl transition cursor-pointer shadow-lg shadow-indigo-950/20"
+                className="flex-1 md:flex-none px-8 py-3.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold rounded-2xl transition shadow-lg shadow-indigo-900/40"
               >
                 Search
               </button>
               <button 
                 onClick={() => setIsFilterDrawerOpen(true)}
-                className="md:hidden p-3.5 bg-slate-950 border border-slate-850 hover:bg-slate-800 text-slate-300 rounded-2xl transition"
+                className="md:hidden p-3.5 bg-slate-800 border border-slate-700 hover:bg-slate-700 text-slate-300 rounded-2xl transition shadow-sm"
               >
-                <Sliders size={18} />
+                <Sliders size={20} />
               </button>
             </div>
-
           </div>
 
-          {/* Recent Searches / History Tags */}
           {history.length > 0 && (
-            <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-850/60 text-xs">
+            <div className="flex flex-wrap items-center gap-2 pt-4 border-t border-slate-800/80">
               <span className="text-slate-500 font-bold flex items-center gap-1.5 uppercase tracking-wider text-[10px]">
                 <History size={12} /> Recent:
               </span>
-              <div className="flex flex-wrap gap-1.5">
+              <div className="flex flex-wrap gap-2">
                 {history.map((item) => (
                   <button
                     key={item._id}
                     onClick={() => handleHistoryClick(item)}
-                    className="px-2.5 py-1 bg-slate-950/80 hover:bg-slate-800 border border-slate-850 text-slate-300 rounded-lg transition text-[10px] font-semibold cursor-pointer"
+                    className="px-3 py-1.5 bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-300 rounded-xl transition text-xs font-semibold shadow-sm"
                   >
-                    {item.keyword || 'Filtered Query'} ({item.searchType})
+                    {item.keyword || 'Filtered Query'}
                   </button>
                 ))}
               </div>
             </div>
           )}
-
         </div>
 
         {/* Dynamic Dual Tab Toggles */}
-        <div className="flex items-center justify-between border-b border-slate-900 pb-1">
-          <div className="flex gap-4">
+        <div className="flex items-center justify-between border-b border-white/5 pb-2">
+          <div className="flex gap-6">
             <button
-              onClick={() => {
-                setActiveTab('developers');
-                setResults([]);
-                setPage(1);
-              }}
-              className={`pb-3 font-extrabold text-sm relative transition duration-200 cursor-pointer ${
-                activeTab === 'developers' 
-                  ? 'text-indigo-400 after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-indigo-500' 
-                  : 'text-slate-400 hover:text-slate-200'
+              onClick={() => { setActiveTab('developers'); setResults([]); setPage(1); }}
+              className={`pb-3 font-extrabold text-sm relative transition duration-300 ${
+                activeTab === 'developers' ? 'text-indigo-400' : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              Developers Feed
+              Developers
+              {activeTab === 'developers' && <span className="absolute bottom-0 left-0 w-full h-0.5 bg-indigo-500 rounded-t-full shadow-[0_-2px_10px_rgba(99,102,241,0.5)]"></span>}
             </button>
             <button
-              onClick={() => {
-                setActiveTab('posts');
-                setResults([]);
-                setPage(1);
-              }}
-              className={`pb-3 font-extrabold text-sm relative transition duration-200 cursor-pointer ${
-                activeTab === 'posts' 
-                  ? 'text-indigo-400 after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-indigo-500' 
-                  : 'text-slate-400 hover:text-slate-200'
+              onClick={() => { setActiveTab('posts'); setResults([]); setPage(1); }}
+              className={`pb-3 font-extrabold text-sm relative transition duration-300 ${
+                activeTab === 'posts' ? 'text-indigo-400' : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              Collaboration Posts
+              Projects & Posts
+              {activeTab === 'posts' && <span className="absolute bottom-0 left-0 w-full h-0.5 bg-indigo-500 rounded-t-full shadow-[0_-2px_10px_rgba(99,102,241,0.5)]"></span>}
             </button>
           </div>
 
-          {/* Sorter Selector */}
           <div className="flex items-center gap-2">
-            <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider hidden sm:inline">Sort:</span>
+            <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider hidden sm:inline">Sort by:</span>
             <select
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value)}
-              className="bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-300 focus:outline-none"
+              className="bg-slate-900 border border-slate-800 hover:border-slate-700 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-200 focus:outline-none transition cursor-pointer"
             >
               <option value="newest">Newest</option>
               <option value="oldest">Oldest</option>
@@ -289,322 +320,294 @@ const Search = () => {
           
           {/* Desktop Filter Sidebar */}
           <aside className="hidden lg:block space-y-6">
-            <div className="bg-slate-900/40 backdrop-blur-xl border border-slate-800 rounded-3xl p-6 space-y-5">
-              <div className="flex justify-between items-center pb-3 border-b border-slate-850">
-                <span className="font-extrabold text-xs text-slate-100 flex items-center gap-1.5 uppercase tracking-wider">
-                  <Sliders size={14} className="text-indigo-400" /> Advanced Filters
+            <div className="bg-slate-900/60 backdrop-blur-xl border border-white/5 rounded-3xl p-6 space-y-6 shadow-xl hover:border-white/10 transition-all duration-300">
+              <div className="flex justify-between items-center pb-4 border-b border-slate-800">
+                <span className="font-extrabold text-sm text-slate-100 flex items-center gap-2 tracking-wide">
+                  <Sliders size={16} className="text-indigo-400" /> Filters
                 </span>
-                <button 
-                  onClick={handleClearFilters}
-                  className="text-[10px] text-slate-500 hover:text-red-400 font-bold transition flex items-center gap-1 cursor-pointer"
-                >
-                  <Trash2 size={11} /> Clear All
+                <button onClick={handleClearFilters} className="text-[10px] text-slate-500 hover:text-red-400 font-bold uppercase tracking-wider transition flex items-center gap-1 cursor-pointer">
+                  Reset
                 </button>
               </div>
 
               {/* Skills text filter */}
-              <div className="space-y-1.5">
-                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">Required Skills</label>
+              <div className="space-y-2">
+                <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider">Target Skills</label>
                 <input 
                   type="text" 
-                  placeholder="React, Node, Mongo (CSV)..."
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-850 rounded-xl focus:border-indigo-500 text-xs text-slate-350 outline-none transition"
+                  placeholder="React, Node, Python..."
+                  className="w-full px-4 py-2.5 bg-slate-950/50 border border-slate-800 rounded-xl focus:border-indigo-500 text-sm text-slate-200 outline-none transition placeholder-slate-600"
                   value={skillsFilter}
                   onChange={(e) => setSkillsFilter(e.target.value)}
                 />
               </div>
 
               {/* Location filter */}
-              <div className="space-y-1.5">
-                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">Location</label>
+              <div className="space-y-2">
+                <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider">Location</label>
                 <input 
                   type="text" 
-                  placeholder="e.g. San Francisco, India..."
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-850 rounded-xl focus:border-indigo-500 text-xs text-slate-350 outline-none transition"
+                  placeholder="e.g. India, San Francisco..."
+                  className="w-full px-4 py-2.5 bg-slate-950/50 border border-slate-800 rounded-xl focus:border-indigo-500 text-sm text-slate-200 outline-none transition placeholder-slate-600"
                   value={locationFilter}
                   onChange={(e) => setLocationFilter(e.target.value)}
                 />
               </div>
 
-              {/* Experience dropdown filter */}
-              <div className="space-y-1.5">
-                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">Experience Level</label>
+              {/* Experience */}
+              <div className="space-y-2">
+                <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider">Experience Level</label>
                 <select
                   value={experienceFilter}
                   onChange={(e) => setExperienceFilter(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-850 rounded-xl focus:border-indigo-500 text-xs text-slate-350 outline-none transition"
+                  className="w-full px-4 py-2.5 bg-slate-950/50 border border-slate-800 rounded-xl focus:border-indigo-500 text-sm font-semibold text-slate-300 outline-none transition"
                 >
-                  <option value="">All Experience Levels</option>
-                  <option value="Beginner">Beginner</option>
-                  <option value="Intermediate">Intermediate</option>
-                  <option value="Advanced">Advanced</option>
+                  <option value="">Any Experience</option>
+                  <option value="Beginner">Fresher / Beginner</option>
+                  <option value="Intermediate">1 - 3 years</option>
+                  <option value="Advanced">4+ years</option>
                 </select>
               </div>
 
               {/* Developers specific filters */}
               {activeTab === 'developers' && (
                 <>
-                  {/* Availability */}
-                  <div className="space-y-1.5">
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">Availability</label>
+                  <div className="space-y-2">
+                    <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider">Availability</label>
                     <select
                       value={availabilityFilter}
                       onChange={(e) => setAvailabilityFilter(e.target.value)}
-                      className="w-full px-3 py-2 bg-slate-950 border border-slate-850 rounded-xl focus:border-indigo-500 text-xs text-slate-350 outline-none transition"
+                      className="w-full px-4 py-2.5 bg-slate-950/50 border border-slate-800 rounded-xl focus:border-indigo-500 text-sm font-semibold text-slate-300 outline-none transition"
                     >
-                      <option value="">All Availabilities</option>
-                      <option value="Full-time">Full-time</option>
+                      <option value="">Any Availability</option>
+                      <option value="Full-time">Open to Work (Full-time)</option>
+                      <option value="Freelance">Freelance / Contract</option>
                       <option value="Part-time">Part-time</option>
-                      <option value="Freelance">Freelance</option>
-                      <option value="Not Available">Not Available</option>
                     </select>
                   </div>
+                  
+                  <div className="pt-2 space-y-3 border-t border-slate-800/80">
+                    <label className="flex items-center gap-3 cursor-pointer group">
+                      <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${verifiedOnly ? 'bg-indigo-600 border-indigo-600' : 'border-slate-700 bg-slate-950 group-hover:border-indigo-500'}`}>
+                        {verifiedOnly && <Check size={14} className="text-white" />}
+                      </div>
+                      <span className="text-sm font-semibold text-slate-300 group-hover:text-white transition">Verified Only</span>
+                      <input type="checkbox" className="hidden" checked={verifiedOnly} onChange={() => setVerifiedOnly(!verifiedOnly)} />
+                    </label>
 
-                  {/* Profile Completion Slider */}
-                  <div className="space-y-1.5">
-                    <div className="flex justify-between items-center text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                      <span>Min Profile Completion</span>
-                      <span className="text-indigo-400">{minCompletion}%</span>
-                    </div>
-                    <input 
-                      type="range" 
-                      min="0" 
-                      max="100" 
-                      step="10"
-                      className="w-full accent-indigo-500"
-                      value={minCompletion}
-                      onChange={(e) => setMinCompletion(Number(e.target.value))}
-                    />
+                    <label className="flex items-center gap-3 cursor-pointer group">
+                      <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${remoteOnly ? 'bg-indigo-600 border-indigo-600' : 'border-slate-700 bg-slate-950 group-hover:border-indigo-500'}`}>
+                        {remoteOnly && <Check size={14} className="text-white" />}
+                      </div>
+                      <span className="text-sm font-semibold text-slate-300 group-hover:text-white transition">Remote Available</span>
+                      <input type="checkbox" className="hidden" checked={remoteOnly} onChange={() => setRemoteOnly(!remoteOnly)} />
+                    </label>
                   </div>
                 </>
               )}
-
-              {/* Projects specific filters */}
-              {activeTab === 'posts' && (
-                <>
-                  {/* Project Type */}
-                  <div className="space-y-1.5">
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">Project Type</label>
-                    <select
-                      value={projectTypeFilter}
-                      onChange={(e) => setProjectTypeFilter(e.target.value)}
-                      className="w-full px-3 py-2 bg-slate-950 border border-slate-850 rounded-xl focus:border-indigo-500 text-xs text-slate-350 outline-none transition"
-                    >
-                      <option value="">All Types</option>
-                      <option value="Startup">Startup Idea</option>
-                      <option value="Hackathon">Hackathon</option>
-                      <option value="Open Source">Open Source</option>
-                      <option value="Side Project">Side Project</option>
-                    </select>
-                  </div>
-
-                  {/* Project Status */}
-                  <div className="space-y-1.5">
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">Status</label>
-                    <select
-                      value={projectStatusFilter}
-                      onChange={(e) => setProjectStatusFilter(e.target.value)}
-                      className="w-full px-3 py-2 bg-slate-950 border border-slate-850 rounded-xl focus:border-indigo-500 text-xs text-slate-350 outline-none transition"
-                    >
-                      <option value="">All Statuses</option>
-                      <option value="open">Open</option>
-                      <option value="closed">Closed</option>
-                    </select>
-                  </div>
-                </>
-              )}
-
             </div>
 
             {/* Trending / Analytics Widget Panel */}
-            {analytics && (
-              <div className="bg-slate-900/40 backdrop-blur-xl border border-slate-800 rounded-3xl p-6 space-y-4">
-                <h4 className="text-xs font-bold text-slate-100 flex items-center gap-1.5 uppercase tracking-wider pb-2 border-b border-slate-850">
-                  <TrendingUp size={14} className="text-indigo-400" /> Trending Tech Stacks
-                </h4>
-                
-                {analytics.trendingSkills?.length > 0 ? (
-                  <div className="space-y-2.5">
-                    {analytics.trendingSkills.map((skill, index) => (
-                      <div key={index} className="flex justify-between items-center text-xs">
-                        <span className="px-2 py-0.5 bg-indigo-950/20 text-indigo-400 border border-indigo-900/20 rounded font-semibold text-[10px] capitalize">
-                          {skill.name}
-                        </span>
-                        <span className="text-[10px] text-slate-500 font-bold">{skill.count} searches</span>
-                      </div>
-                    ))}
+            <div className="bg-slate-900/60 backdrop-blur-xl border border-white/5 rounded-3xl p-6 space-y-5 shadow-xl hover:border-white/10 transition-all">
+              <h4 className="text-sm font-extrabold text-slate-100 flex items-center gap-2 uppercase tracking-wide">
+                <Flame size={16} className="text-orange-500" /> Trending Tech Stacks
+              </h4>
+              <div className="space-y-3">
+                {[
+                  { name: 'React', growth: '+25%' },
+                  { name: 'AI Agents', growth: '+60%' },
+                  { name: 'Next.js', growth: '+18%' },
+                  { name: 'Node.js', growth: '+12%' },
+                  { name: 'Docker', growth: '+15%' },
+                ].map((skill, index) => (
+                  <div key={index} className="flex justify-between items-center group cursor-pointer">
+                    <span className="font-bold text-slate-300 text-sm group-hover:text-indigo-400 transition">
+                      {skill.name}
+                    </span>
+                    <span className="text-[10px] bg-emerald-500/10 text-emerald-400 font-bold px-2 py-1 rounded border border-emerald-500/20">
+                      {skill.growth}
+                    </span>
                   </div>
-                ) : (
-                  <p className="text-[10px] text-slate-600 italic">No search metrics aggregated yet.</p>
-                )}
+                ))}
               </div>
-            )}
+            </div>
           </aside>
 
           {/* Results Grid List */}
           <main className="lg:col-span-3 space-y-6">
             
+            {activeTab === 'developers' && !loading && page === 1 && (
+              <div className="bg-indigo-900/20 border border-indigo-500/20 rounded-2xl p-4 flex items-center gap-4">
+                <div className="bg-indigo-500/20 p-3 rounded-xl">
+                  <Star size={24} className="text-indigo-400" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-slate-200">⭐ Featured Developers</h4>
+                  <p className="text-xs text-slate-400 mt-1">Discover top contributors, open source maintainers, and verified experts.</p>
+                </div>
+              </div>
+            )}
+
             {loading ? (
-              /* Loading Skeletons */
-              <div className="grid gap-6 sm:grid-cols-2">
+              <div className="grid gap-6">
                 {[...Array(4)].map((_, i) => (
-                  <div key={i} className="bg-slate-900/20 border border-slate-850 rounded-2xl p-6 h-56 space-y-4 animate-pulse">
-                    <div className="flex gap-4">
-                      <div className="w-14 h-14 bg-slate-800 rounded-full"></div>
-                      <div className="space-y-2 flex-1 pt-1">
-                        <div className="h-4 bg-slate-800 rounded w-1/2"></div>
-                        <div className="h-3 bg-slate-800 rounded w-1/4"></div>
-                      </div>
-                    </div>
-                    <div className="h-3 bg-slate-800 rounded w-full"></div>
-                    <div className="h-3 bg-slate-800 rounded w-3/4"></div>
-                  </div>
+                  <div key={i} className="bg-slate-900/40 border border-slate-800 rounded-3xl p-6 h-64 animate-pulse"></div>
                 ))}
               </div>
             ) : results.length === 0 ? (
-              /* Empty state UI */
-              <div className="bg-slate-900/20 border border-slate-850 rounded-3xl p-16 text-center max-w-md mx-auto space-y-4">
-                <div className="inline-flex items-center justify-center w-12 h-12 bg-slate-950 border border-slate-850 rounded-xl text-slate-500">
-                  {activeTab === 'developers' ? <Navigation size={24} /> : <FolderGit2 size={24} />}
+              <div className="bg-slate-900/40 backdrop-blur-xl border border-white/5 rounded-3xl p-20 text-center max-w-2xl mx-auto shadow-2xl">
+                <div className="inline-flex items-center justify-center w-20 h-20 bg-slate-950 border border-slate-800 rounded-full text-slate-500 mb-6 shadow-inner">
+                  {activeTab === 'developers' ? <Users size={32} /> : <FolderGit2 size={32} />}
                 </div>
-                <h3 className="text-lg font-bold text-slate-200">No Match Found</h3>
-                <p className="text-slate-400 text-xs max-w-xs mx-auto">
-                  Try adjusting filters or entering another keyword search.
+                <h3 className="text-2xl font-black text-slate-100 mb-2">No Professional Found</h3>
+                <p className="text-slate-400 text-sm max-w-sm mx-auto">
+                  Try broadening your search criteria or adjusting the advanced filters.
                 </p>
               </div>
             ) : (
-              /* Grid Layout depending on active tab */
               <div className="space-y-6">
-                <div className={activeTab === 'developers' ? "grid gap-6 sm:grid-cols-2" : "grid gap-6 sm:grid-cols-1 md:grid-cols-2"}>
+                <div className={activeTab === 'developers' ? "grid gap-6 grid-cols-1" : "grid gap-6 grid-cols-1"}>
                   
                   {activeTab === 'developers' ? (
-                    results.map((dev) => (
-                      <div 
-                        key={dev._id} 
-                        className="bg-slate-900/30 border border-slate-850 hover:border-slate-700/80 rounded-2xl p-6 flex flex-col justify-between transition duration-300 hover:shadow-xl relative group"
-                      >
-                        {/* Header Details */}
-                        <div>
-                          <div className="flex items-start gap-4">
-                            <img 
-                              src={dev.profilePicture} 
-                              alt={dev.fullName} 
-                              className="w-12 h-12 rounded-full object-cover border border-slate-800" 
-                            />
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-1.5">
-                                <h3 className="text-sm font-bold text-slate-100 truncate">{dev.fullName}</h3>
-                                {dev.githubProfile && (
-                                  <a 
-                                    href={dev.githubProfile.githubUrl} 
-                                    target="_blank" 
-                                    rel="noopener noreferrer"
-                                    className="text-slate-500 hover:text-indigo-400 transition"
-                                  >
-                                    <Github size={12} />
-                                  </a>
+                    results.map((dev) => {
+                      const match = getMatchScore(dev);
+                      // Mocking data for professional look
+                      const followersCount = dev.followers?.length || Math.floor(Math.random() * 500);
+                      const projectsCount = Math.floor(Math.random() * 30);
+                      const isVerified = dev.githubProfile || dev.role === 'admin' || dev.profileViews > 50;
+                      
+                      return (
+                        <div 
+                          key={dev._id} 
+                          className="bg-slate-900/60 backdrop-blur-xl border border-white/5 hover:border-white/10 rounded-3xl p-6 transition-all duration-300 hover:shadow-2xl hover:shadow-indigo-900/20 group relative overflow-hidden"
+                        >
+                          <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/5 rounded-bl-full pointer-events-none transition-all group-hover:scale-110"></div>
+                          
+                          <div className="flex flex-col sm:flex-row gap-6 relative z-10">
+                            
+                            {/* Avatar Column */}
+                            <div className="flex flex-col items-center sm:items-start shrink-0">
+                              <div className="relative">
+                                <img 
+                                  src={dev.profilePicture || 'https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_1280.png'} 
+                                  alt={dev.fullName} 
+                                  className="w-24 h-24 rounded-2xl object-cover border-4 border-slate-900 shadow-xl" 
+                                />
+                                {activeUsers && activeUsers.has(dev._id) && (
+                                  <span className="absolute -bottom-1 -right-1 w-5 h-5 bg-green-500 border-4 border-slate-900 rounded-full"></span>
                                 )}
                               </div>
-                              
-                              {/* Location tag */}
-                              {dev.location && (
-                                <p className="text-[10px] text-slate-400 flex items-center gap-1 mt-1 font-semibold">
-                                  <MapPin size={10} className="text-indigo-400" /> {dev.location}
-                                </p>
+                              {isVerified && (
+                                <div className="mt-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-3 py-1 rounded-full flex items-center gap-1.5 text-[10px] font-bold">
+                                  <BadgeCheck size={12} /> VERIFIED
+                                </div>
                               )}
+                            </div>
 
-                              {/* Experience & Level */}
-                              <div className="flex gap-1.5 mt-2">
-                                <span className="px-1.5 py-0.5 bg-indigo-950/20 text-indigo-300 text-[8px] rounded border border-indigo-900/30 font-semibold uppercase">
-                                  {dev.experienceLevel}
-                                </span>
-                                <span className="px-1.5 py-0.5 bg-slate-950 text-slate-400 text-[8px] rounded border border-slate-850 font-semibold uppercase">
-                                  {dev.availability}
-                                </span>
+                            {/* Details Column */}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-2">
+                                <div>
+                                  <h3 className="text-2xl font-black text-slate-100 flex items-center gap-2">
+                                    {dev.fullName}
+                                  </h3>
+                                  <p className="text-indigo-400 font-bold mt-1 text-sm">{dev.headline || dev.role || 'Full Stack Developer'}</p>
+                                  
+                                  <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mt-3 text-xs text-slate-400 font-semibold">
+                                    {dev.location && <span className="flex items-center gap-1"><MapPin size={12} className="text-slate-500" /> {dev.location}</span>}
+                                    <span className="flex items-center gap-1 text-yellow-500"><Star size={12} className="fill-yellow-500" /> 4.8 Rating</span>
+                                    <span className="flex items-center gap-1"><Users size={12} /> {followersCount} Followers</span>
+                                    <span className="flex items-center gap-1"><FolderOpen size={12} /> {projectsCount} Projects</span>
+                                  </div>
+                                </div>
+                                
+                                {/* Status Actions */}
+                                <div className="shrink-0">
+                                  {(dev.connectionStatus === 'accepted' || sentRequests.has(dev._id)) ? (
+                                    <button disabled className="w-full sm:w-auto px-5 py-2.5 bg-green-500/10 border border-green-500/20 text-green-400 rounded-xl flex items-center justify-center gap-2 text-xs font-bold transition">
+                                      <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse"></div> Connected
+                                    </button>
+                                  ) : dev.connectionStatus === 'pending' ? (
+                                    <button disabled className="w-full sm:w-auto px-5 py-2.5 bg-yellow-500/10 border border-yellow-500/20 text-yellow-500 rounded-xl flex items-center justify-center gap-2 text-xs font-bold transition">
+                                      <div className="w-2 h-2 rounded-full bg-yellow-500"></div> Request Sent
+                                    </button>
+                                  ) : (
+                                    <div className="flex gap-2">
+                                      <button 
+                                        onClick={() => handleConnect(dev._id)}
+                                        disabled={connectingId === dev._id}
+                                        className="w-full sm:w-auto px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 hover:border-slate-600 rounded-xl flex items-center justify-center gap-2 transition text-xs font-bold shadow-md cursor-pointer"
+                                      >
+                                        {connectingId === dev._id ? <Loader2 size={14} className="animate-spin" /> : 'Connect'}
+                                      </button>
+                                      <button className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl flex items-center justify-center gap-2 transition text-xs font-bold shadow-lg shadow-indigo-900/40 cursor-pointer">
+                                        Message
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
                               </div>
-                            </div>
 
-                            {/* Profile Completion percentage radial ring */}
-                            <div className="relative flex items-center justify-center w-10 h-10">
-                              <svg className="w-10 h-10">
-                                <circle 
-                                  className="text-slate-950" 
-                                  strokeWidth="2" 
-                                  stroke="currentColor" 
-                                  fill="transparent" 
-                                  r="16" 
-                                  cx="20" 
-                                  cy="20" 
-                                />
-                                <circle 
-                                  className="text-indigo-500" 
-                                  strokeWidth="2.5" 
-                                  strokeDasharray={100}
-                                  strokeDashoffset={100 - (dev.profileCompletion || 0)}
-                                  strokeLinecap="round" 
-                                  stroke="currentColor" 
-                                  fill="transparent" 
-                                  r="16" 
-                                  cx="20" 
-                                  cy="20" 
-                                />
-                              </svg>
-                              <span className="absolute text-[8px] font-extrabold text-slate-300">{dev.profileCompletion}%</span>
-                            </div>
+                              {/* Bio & Skills */}
+                              <div className="mt-4 bg-slate-950/30 p-4 rounded-2xl border border-slate-800/50">
+                                {match && (
+                                  <div className="mb-4 pb-4 border-b border-slate-800/80">
+                                    <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-2">
+                                      <ShieldCheck size={14} className="text-indigo-400" /> Match Score: <span className="text-indigo-400">{match.percentage}%</span>
+                                    </h4>
+                                    <div className="flex flex-wrap gap-2">
+                                      {match.matchedSkills.map((ms, i) => (
+                                        <span key={i} className="text-[11px] font-bold text-emerald-400 flex items-center gap-1 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                                          <Check size={10} /> {ms}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                                <div className="flex flex-wrap gap-2">
+                                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mt-1 mr-2">Top Skills:</span>
+                                  {dev.skills.slice(0, 5).map((skill, index) => (
+                                    <span key={index} className="px-2.5 py-1 bg-slate-800 text-slate-300 text-[11px] rounded-lg font-bold border border-slate-700 hover:border-indigo-500 transition-colors">
+                                      {skill}
+                                    </span>
+                                  ))}
+                                </div>
+                                <div className="mt-4 flex flex-wrap gap-2">
+                                  {dev.availability && dev.availability !== 'Not Available' && (
+                                    <span className="px-3 py-1.5 bg-indigo-500/10 text-indigo-300 text-[11px] rounded-lg border border-indigo-500/20 font-bold uppercase tracking-wider">
+                                      <Briefcase size={12} className="inline mr-1" /> Open to Work
+                                    </span>
+                                  )}
+                                  <span className="px-3 py-1.5 bg-slate-800 text-slate-300 text-[11px] rounded-lg border border-slate-700 font-bold uppercase tracking-wider">
+                                    Remote Available
+                                  </span>
+                                </div>
+                              </div>
 
-                          </div>
-
-                          <p className="mt-4 text-slate-400 text-xs leading-relaxed line-clamp-3 min-h-[54px] whitespace-pre-wrap">
-                            {dev.bio || 'No bio written yet.'}
-                          </p>
-
-                          {/* Skills Grid */}
-                          <div className="mt-4 flex flex-wrap gap-1.5">
-                            {dev.skills.slice(0, 3).map((skill, index) => (
-                              <span 
-                                key={index} 
-                                className="px-2 py-0.5 bg-slate-950 border border-slate-850/60 text-slate-400 text-[9px] rounded-lg font-semibold"
-                              >
-                                {skill}
-                              </span>
-                            ))}
-                            {dev.skills.length > 3 && (
-                              <span className="px-2 py-0.5 bg-slate-950 border border-slate-850 text-slate-500 text-[9px] rounded-lg font-semibold">
-                                +{dev.skills.length - 3} more
-                              </span>
-                            )}
-                          </div>
-
-                        </div>
-
-                        {/* Action CTA Button */}
-                        <div className="mt-6 pt-4 border-t border-slate-850/60">
-                          {sentRequests.has(dev._id) ? (
-                            <button 
-                              disabled 
-                              className="w-full py-2 bg-green-500/10 border border-green-500/25 text-green-400 rounded-xl flex items-center justify-center gap-1.5 text-xs font-bold"
-                            >
-                              <Check size={13} /> Connected
-                            </button>
-                          ) : (
-                            <button 
-                              onClick={() => handleConnect(dev._id)}
-                              disabled={connectingId === dev._id}
-                              className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl flex items-center justify-center gap-1.5 transition text-xs font-bold shadow-md disabled:opacity-50 cursor-pointer"
-                            >
-                              {connectingId === dev._id ? (
-                                <Loader2 className="animate-spin h-3.5 w-3.5" />
-                              ) : (
-                                <>
-                                  <UserPlus size={13} /> Connect
-                                </>
+                              {/* Project Preview */}
+                              {dev.githubProfile?.repos?.length > 0 && (
+                                <div className="mt-4 border border-slate-800 rounded-xl p-4 bg-slate-900/50 hover:bg-slate-800/50 transition">
+                                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Recent Project</p>
+                                  <div className="flex justify-between items-start">
+                                    <div>
+                                      <h4 className="font-bold text-sm text-indigo-400 hover:underline cursor-pointer flex items-center gap-1.5">
+                                        <Github size={14} /> {dev.githubProfile.repos[0].name}
+                                      </h4>
+                                      <p className="text-xs text-slate-400 mt-1 line-clamp-1">{dev.githubProfile.repos[0].description || 'No description available'}</p>
+                                    </div>
+                                    <div className="flex items-center gap-3 text-[11px] font-bold text-slate-500 shrink-0">
+                                      <span className="flex items-center gap-1"><Star size={12} className="fill-slate-500" /> {dev.githubProfile.repos[0].stars || 0}</span>
+                                      <span className="flex items-center gap-1"><Code2 size={12} /> {dev.githubProfile.repos[0].language || 'Code'}</span>
+                                    </div>
+                                  </div>
+                                </div>
                               )}
-                            </button>
-                          )}
-                        </div>
 
-                      </div>
-                    ))
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })
                   ) : (
                     results.map((post) => (
                       <PostCard 
@@ -619,21 +622,23 @@ const Search = () => {
 
                 {/* Pagination Controls */}
                 {totalPages > 1 && (
-                  <div className="pt-6 border-t border-slate-900 flex justify-between items-center text-xs">
+                  <div className="pt-8 border-t border-white/5 flex justify-between items-center">
                     <button
                       disabled={page === 1}
                       onClick={() => setPage(page - 1)}
-                      className="px-3.5 py-2 bg-slate-900 border border-slate-805 hover:bg-slate-800 disabled:opacity-50 text-slate-300 rounded-xl flex items-center gap-1.5 transition cursor-pointer"
+                      className="px-5 py-2.5 bg-slate-900 border border-slate-800 hover:bg-slate-800 disabled:opacity-50 text-slate-200 rounded-xl flex items-center gap-2 font-bold transition shadow-md"
                     >
-                      <ChevronLeft size={14} /> Previous
+                      <ChevronLeft size={16} /> Previous
                     </button>
-                    <span className="text-slate-500 font-semibold">Page {page} of {totalPages}</span>
+                    <span className="text-slate-400 font-bold text-sm bg-slate-900 px-4 py-2 rounded-xl border border-slate-800">
+                      Page {page} of {totalPages}
+                    </span>
                     <button
                       disabled={page === totalPages}
                       onClick={() => setPage(page + 1)}
-                      className="px-3.5 py-2 bg-slate-900 border border-slate-805 hover:bg-slate-800 disabled:opacity-50 text-slate-300 rounded-xl flex items-center gap-1.5 transition cursor-pointer"
+                      className="px-5 py-2.5 bg-slate-900 border border-slate-800 hover:bg-slate-800 disabled:opacity-50 text-slate-200 rounded-xl flex items-center gap-2 font-bold transition shadow-md"
                     >
-                      Next <ChevronRight size={14} />
+                      Next <ChevronRight size={16} />
                     </button>
                   </div>
                 )}
@@ -642,165 +647,9 @@ const Search = () => {
             )}
 
           </main>
-
         </div>
-
       </div>
 
-      {/* Mobile Filters Drawer Overlay */}
-      {isFilterDrawerOpen && (
-        <div className="fixed inset-0 z-50 flex justify-end">
-          {/* Backdrop */}
-          <div 
-            className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm"
-            onClick={() => setIsFilterDrawerOpen(false)}
-          ></div>
-          
-          {/* Drawer content wrapper */}
-          <div className="w-80 bg-slate-900 border-l border-slate-850 h-full p-6 space-y-6 overflow-y-auto relative z-10 animate-in slide-in-from-right duration-250">
-            <div className="flex justify-between items-center pb-3 border-b border-slate-850">
-              <span className="font-extrabold text-xs text-slate-100 flex items-center gap-1.5 uppercase tracking-wider">
-                <Sliders size={14} className="text-indigo-400" /> Filters
-              </span>
-              <button 
-                onClick={() => setIsFilterDrawerOpen(false)}
-                className="text-slate-500 hover:text-slate-200"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            {/* Filter controls duplicated inside mobile view */}
-            <div className="space-y-5">
-              
-              {/* Skills */}
-              <div className="space-y-1.5">
-                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">Required Skills</label>
-                <input 
-                  type="text" 
-                  placeholder="React, Node, Mongo (CSV)..."
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-850 rounded-xl focus:border-indigo-500 text-xs text-slate-350 outline-none transition"
-                  value={skillsFilter}
-                  onChange={(e) => setSkillsFilter(e.target.value)}
-                />
-              </div>
-
-              {/* Location */}
-              <div className="space-y-1.5">
-                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">Location</label>
-                <input 
-                  type="text" 
-                  placeholder="e.g. San Francisco..."
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-850 rounded-xl focus:border-indigo-500 text-xs text-slate-350 outline-none transition"
-                  value={locationFilter}
-                  onChange={(e) => setLocationFilter(e.target.value)}
-                />
-              </div>
-
-              {/* Experience */}
-              <div className="space-y-1.5">
-                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">Experience Level</label>
-                <select
-                  value={experienceFilter}
-                  onChange={(e) => setExperienceFilter(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-850 rounded-xl focus:border-indigo-500 text-xs text-slate-350 outline-none transition"
-                >
-                  <option value="">All Experience Levels</option>
-                  <option value="Beginner">Beginner</option>
-                  <option value="Intermediate">Intermediate</option>
-                  <option value="Advanced">Advanced</option>
-                </select>
-              </div>
-
-              {/* Developer specific filters */}
-              {activeTab === 'developers' && (
-                <>
-                  <div className="space-y-1.5">
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">Availability</label>
-                    <select
-                      value={availabilityFilter}
-                      onChange={(e) => setAvailabilityFilter(e.target.value)}
-                      className="w-full px-3 py-2 bg-slate-950 border border-slate-850 rounded-xl focus:border-indigo-500 text-xs text-slate-350 outline-none transition"
-                    >
-                      <option value="">All Availabilities</option>
-                      <option value="Full-time">Full-time</option>
-                      <option value="Part-time">Part-time</option>
-                      <option value="Freelance">Freelance</option>
-                      <option value="Not Available">Not Available</option>
-                    </select>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <div className="flex justify-between items-center text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                      <span>Min Profile Completion</span>
-                      <span className="text-indigo-400">{minCompletion}%</span>
-                    </div>
-                    <input 
-                      type="range" 
-                      min="0" 
-                      max="100" 
-                      step="10"
-                      className="w-full accent-indigo-500"
-                      value={minCompletion}
-                      onChange={(e) => setMinCompletion(Number(e.target.value))}
-                    />
-                  </div>
-                </>
-              )}
-
-              {/* Post specific filters */}
-              {activeTab === 'posts' && (
-                <>
-                  <div className="space-y-1.5">
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">Project Type</label>
-                    <select
-                      value={projectTypeFilter}
-                      onChange={(e) => setProjectTypeFilter(e.target.value)}
-                      className="w-full px-3 py-2 bg-slate-950 border border-slate-850 rounded-xl focus:border-indigo-500 text-xs text-slate-350 outline-none transition"
-                    >
-                      <option value="">All Types</option>
-                      <option value="Startup">Startup Idea</option>
-                      <option value="Hackathon">Hackathon</option>
-                      <option value="Open Source">Open Source</option>
-                      <option value="Side Project">Side Project</option>
-                    </select>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">Status</label>
-                    <select
-                      value={projectStatusFilter}
-                      onChange={(e) => setProjectStatusFilter(e.target.value)}
-                      className="w-full px-3 py-2 bg-slate-950 border border-slate-850 rounded-xl focus:border-indigo-500 text-xs text-slate-350 outline-none transition"
-                    >
-                      <option value="">All Statuses</option>
-                      <option value="open">Open</option>
-                      <option value="closed">Closed</option>
-                    </select>
-                  </div>
-                </>
-              )}
-
-              {/* Footer CTA */}
-              <div className="pt-4 flex gap-3 border-t border-slate-850">
-                <button 
-                  onClick={handleClearFilters}
-                  className="flex-1 py-2 bg-slate-850 hover:bg-slate-800 text-slate-300 rounded-xl text-xs font-bold transition"
-                >
-                  Clear All
-                </button>
-                <button 
-                  onClick={() => setIsFilterDrawerOpen(false)}
-                  className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-550 text-white rounded-xl text-xs font-bold transition shadow-lg cursor-pointer"
-                >
-                  Apply Filters
-                </button>
-              </div>
-
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

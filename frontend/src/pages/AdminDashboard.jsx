@@ -2,11 +2,21 @@ import React, { useState, useEffect } from 'react';
 import { 
   Users, UserX, MessageSquare, Link2, FileText, Award, BarChart3, 
   Trash2, ShieldAlert, CheckCircle, Search, ChevronLeft, ChevronRight, 
-  Loader2, RefreshCw, Github, AlertTriangle, UserCheck
+  Loader2, RefreshCw, Github, AlertTriangle, UserCheck, Phone, Video, PhoneOff
 } from 'lucide-react';
+import { AuthContext } from '../context/AuthContext';
 import api from '../services/api';
 
+// New Components
+import AdminHeader from '../components/admin/AdminHeader';
+import AdminStatsWidgets from '../components/admin/AdminStatsWidgets';
+import AdminQuickActions from '../components/admin/AdminQuickActions';
+import AdminCharts from '../components/admin/AdminCharts';
+import AdminFeed from '../components/admin/AdminFeed';
+import AdminSidebarRight from '../components/admin/AdminSidebarRight';
+
 const AdminDashboard = () => {
+  const { user: currentUser } = React.useContext(AuthContext);
   const [activeTab, setActiveTab] = useState('overview');
 
   // Stats State
@@ -32,6 +42,9 @@ const AdminDashboard = () => {
   // Generic errors tracker
   const [error, setError] = useState('');
   const [actionLoadingId, setActionLoadingId] = useState(null);
+  const [announcementTitle, setAnnouncementTitle] = useState('');
+  const [announcementMsg, setAnnouncementMsg] = useState('');
+  const [sendingAnnouncement, setSendingAnnouncement] = useState(false);
 
   const fetchStats = async () => {
     try {
@@ -156,6 +169,40 @@ const AdminDashboard = () => {
     }
   };
 
+  const handleChangeRole = async (userId) => {
+    try {
+      setActionLoadingId(userId);
+      await api.put(`/admin/users/${userId}/role`);
+      
+      // Update local state arrays
+      setUsers(users.map(u => u._id === userId ? { ...u, role: u.role === 'admin' ? 'user' : 'admin' } : u));
+    } catch (err) {
+      alert('Failed to change user role');
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
+  const handleSendAnnouncement = async (e) => {
+    e.preventDefault();
+    if (!announcementTitle || !announcementMsg) return;
+    
+    try {
+      setSendingAnnouncement(true);
+      const res = await api.post('/admin/announcements', {
+        title: announcementTitle,
+        message: announcementMsg
+      });
+      alert(res.data.message);
+      setAnnouncementTitle('');
+      setAnnouncementMsg('');
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to send announcement');
+    } finally {
+      setSendingAnnouncement(false);
+    }
+  };
+
   const renderOverview = () => {
     if (statsLoading) {
       return (
@@ -176,10 +223,47 @@ const AdminDashboard = () => {
       { label: 'Collaboration Posts', value: stats.totalPosts, icon: <FileText size={18} className="text-purple-400" />, desc: 'Open and closed listings' },
       { label: 'Total Connections', value: stats.totalConnections, icon: <Link2 size={18} className="text-emerald-400" />, desc: 'Successful pairings' },
       { label: 'Messages Sent', value: stats.totalMessages, icon: <MessageSquare size={18} className="text-indigo-400" />, desc: 'Direct messages' },
+      { label: 'Active Calls', value: stats.callStats?.activeCallsCount || 0, icon: <Phone size={18} className="text-emerald-400" />, desc: 'Currently occurring' },
+      { label: 'Total Video Calls', value: stats.callStats?.totalVideoCalls || 0, icon: <Video size={18} className="text-blue-400" />, desc: 'Successful video calls' },
+      { label: 'Total Voice Calls', value: stats.callStats?.totalVoiceCalls || 0, icon: <Phone size={18} className="text-purple-400" />, desc: 'Successful voice calls' },
+      { label: 'Failed Calls', value: stats.callStats?.failedCalls || 0, icon: <PhoneOff size={18} className="text-red-400" />, desc: 'Busy, rejected, or offline' },
     ];
 
     return (
       <div className="space-y-6">
+        {currentUser?.role === 'master_admin' && (
+          <div className="bg-gradient-to-r from-indigo-900/40 to-purple-900/40 border border-indigo-500/30 rounded-2xl p-6 shadow-lg">
+            <h3 className="text-lg font-bold text-slate-100 mb-2 flex items-center gap-2">
+              <MessageSquare size={18} className="text-indigo-400" /> System Announcement
+            </h3>
+            <p className="text-xs text-slate-400 mb-4">Send a platform-wide notification to all users.</p>
+            <form onSubmit={handleSendAnnouncement} className="space-y-3">
+              <input 
+                type="text" 
+                placeholder="Announcement Title" 
+                value={announcementTitle}
+                onChange={(e) => setAnnouncementTitle(e.target.value)}
+                className="w-full bg-slate-950/50 border border-slate-800 rounded-lg px-4 py-2 text-sm text-slate-100 focus:outline-none focus:border-indigo-500"
+                required
+              />
+              <textarea 
+                placeholder="Message body..." 
+                value={announcementMsg}
+                onChange={(e) => setAnnouncementMsg(e.target.value)}
+                className="w-full bg-slate-950/50 border border-slate-800 rounded-lg px-4 py-2 text-sm text-slate-100 focus:outline-none focus:border-indigo-500 min-h-[80px]"
+                required
+              />
+              <button 
+                type="submit" 
+                disabled={sendingAnnouncement}
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-bold transition disabled:opacity-50 flex items-center gap-2"
+              >
+                {sendingAnnouncement ? <Loader2 size={16} className="animate-spin" /> : 'Broadcast to All Users'}
+              </button>
+            </form>
+          </div>
+        )}
+
         {/* Metric Cards Grid */}
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {cards.map((card, i) => (
@@ -358,31 +442,45 @@ const AdminDashboard = () => {
                       </td>
                       <td className="p-4 text-right">
                         <div className="flex justify-end gap-1.5">
-                          {item.isActive ? (
-                            <button
-                              onClick={() => handleBlockUser(item._id)}
-                              disabled={actionLoadingId === item._id}
-                              className="px-2.5 py-1 bg-red-650/10 hover:bg-red-650/20 border border-red-500/10 hover:border-red-500/30 text-red-400 rounded-lg font-bold transition duration-150 cursor-pointer disabled:opacity-50"
-                            >
-                              Block
-                            </button>
+                          {item.role !== 'master_admin' ? (
+                            <>
+                              {item.isActive ? (
+                                <button
+                                  onClick={() => handleBlockUser(item._id)}
+                                  disabled={actionLoadingId === item._id}
+                                  className="px-2.5 py-1 bg-red-650/10 hover:bg-red-650/20 border border-red-500/10 hover:border-red-500/30 text-red-400 rounded-lg font-bold transition duration-150 cursor-pointer disabled:opacity-50"
+                                >
+                                  Block
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => handleUnblockUser(item._id)}
+                                  disabled={actionLoadingId === item._id}
+                                  className="px-2.5 py-1 bg-green-550/10 hover:bg-green-550/20 border border-green-500/10 hover:border-green-500/30 text-green-400 rounded-lg font-bold transition duration-150 cursor-pointer disabled:opacity-50"
+                                >
+                                  Unblock
+                                </button>
+                              )}
+                              <button
+                                onClick={() => handleChangeRole(item._id)}
+                                disabled={actionLoadingId === item._id}
+                                className="p-1.5 bg-slate-950/60 hover:bg-purple-500/10 border border-slate-850 hover:border-purple-500/20 text-slate-500 hover:text-purple-400 rounded-lg transition cursor-pointer disabled:opacity-50"
+                                title={item.role === 'admin' ? 'Demote to user' : 'Promote to admin'}
+                              >
+                                <ShieldAlert size={13} />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteUser(item._id)}
+                                disabled={actionLoadingId === item._id}
+                                className="p-1.5 bg-slate-950/60 hover:bg-red-500/10 border border-slate-850 hover:border-red-500/20 text-slate-500 hover:text-red-400 rounded-lg transition cursor-pointer disabled:opacity-50"
+                                title="Delete user profile"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </>
                           ) : (
-                            <button
-                              onClick={() => handleUnblockUser(item._id)}
-                              disabled={actionLoadingId === item._id}
-                              className="px-2.5 py-1 bg-green-550/10 hover:bg-green-550/20 border border-green-500/10 hover:border-green-500/30 text-green-400 rounded-lg font-bold transition duration-150 cursor-pointer disabled:opacity-50"
-                            >
-                              Unblock
-                            </button>
+                            <span className="text-xs text-slate-500 italic px-2">Protected</span>
                           )}
-                          <button
-                            onClick={() => handleDeleteUser(item._id)}
-                            disabled={actionLoadingId === item._id}
-                            className="p-1.5 bg-slate-950/60 hover:bg-red-500/10 border border-slate-850 hover:border-red-500/20 text-slate-500 hover:text-red-400 rounded-lg transition cursor-pointer disabled:opacity-50"
-                            title="Delete user profile"
-                          >
-                            <Trash2 size={13} />
-                          </button>
                         </div>
                       </td>
                     </tr>
@@ -598,91 +696,93 @@ const AdminDashboard = () => {
   };
 
   return (
-    <div className="min-h-[calc(100vh-4rem)] bg-slate-950 text-slate-100 py-10 px-4 sm:px-6 lg:px-8 relative overflow-hidden">
-      {/* Glow overlays */}
-      <div className="absolute top-10 left-10 w-96 h-96 bg-indigo-500/5 rounded-full blur-3xl"></div>
-      <div className="absolute bottom-20 right-20 w-96 h-96 bg-purple-500/5 rounded-full blur-3xl"></div>
+    <div className="min-h-screen bg-slate-950 text-slate-100 pb-10">
+      {/* Container for the LinkedIn style layout */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6">
+        <div className="flex flex-col lg:flex-row gap-6">
+          
+          {/* Main Content Column */}
+          <div className="flex-1 min-w-0">
+            <AdminHeader user={currentUser} />
+            
+            {/* We render QuickActions to allow tab switching */}
+            <AdminQuickActions activeTab={activeTab} onActionClick={setActiveTab} />
+            
+            {currentUser?.role === 'master_admin' && (
+              <div className="bg-gradient-to-r from-indigo-900/40 to-purple-900/40 border border-indigo-500/30 rounded-2xl p-6 shadow-lg mt-6">
+                <h3 className="text-lg font-bold text-slate-100 mb-2 flex items-center gap-2">
+                  <MessageSquare size={18} className="text-indigo-400" /> System Announcement
+                </h3>
+                <p className="text-xs text-slate-400 mb-4">Send a platform-wide notification to all users.</p>
+                <form onSubmit={handleSendAnnouncement} className="space-y-3">
+                  <input 
+                    type="text" 
+                    placeholder="Announcement Title" 
+                    value={announcementTitle}
+                    onChange={(e) => setAnnouncementTitle(e.target.value)}
+                    className="w-full bg-slate-950/50 border border-slate-800 rounded-lg px-4 py-2 text-sm text-slate-100 focus:outline-none focus:border-indigo-500"
+                    required
+                  />
+                  <textarea 
+                    placeholder="Message body..." 
+                    value={announcementMsg}
+                    onChange={(e) => setAnnouncementMsg(e.target.value)}
+                    className="w-full bg-slate-950/50 border border-slate-800 rounded-lg px-4 py-2 text-sm text-slate-100 focus:outline-none focus:border-indigo-500 min-h-[80px]"
+                    required
+                  />
+                  <button 
+                    type="submit" 
+                    disabled={sendingAnnouncement}
+                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-bold transition disabled:opacity-50 flex items-center gap-2"
+                  >
+                    {sendingAnnouncement ? <Loader2 size={16} className="animate-spin" /> : 'Broadcast to All Users'}
+                  </button>
+                </form>
+              </div>
+            )}
 
-      <div className="max-w-7xl mx-auto relative z-10 space-y-6">
-        
-        {/* Page Title */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-900 pb-6">
-          <div>
-            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-100 flex items-center gap-2">
-              <ShieldAlert size={28} className="text-indigo-400" /> Admin Console
-            </h1>
-            <p className="text-slate-400 text-xs sm:text-sm mt-1.5">
-              Review stats, manage members, clean reported profiles, and view tech analytics.
-            </p>
+            <div className="mt-6">
+              {activeTab === 'overview' || activeTab === 'create' ? (
+                <>
+                  <AdminStatsWidgets stats={stats} />
+                  <AdminCharts stats={stats} />
+                  <AdminFeed />
+                </>
+              ) : activeTab === 'users' ? (
+                <div className="bg-slate-900/60 backdrop-blur-md border border-slate-800 rounded-2xl p-6 shadow-xl">
+                  <h3 className="text-xl font-bold text-slate-100 mb-4">Manage Users</h3>
+                  {renderUsers()}
+                </div>
+              ) : activeTab === 'reports' ? (
+                <div className="bg-slate-900/60 backdrop-blur-md border border-slate-800 rounded-2xl p-6 shadow-xl">
+                  <h3 className="text-xl font-bold text-slate-100 mb-4">Reports</h3>
+                  {renderReports()}
+                </div>
+              ) : activeTab === 'settings' ? (
+                <div className="bg-slate-900/60 backdrop-blur-md border border-slate-800 rounded-2xl p-6 shadow-xl">
+                  <h3 className="text-xl font-bold text-slate-100 mb-4">Settings</h3>
+                  <p className="text-slate-400">Settings panel coming soon.</p>
+                </div>
+              ) : activeTab === 'projects' ? (
+                <div className="bg-slate-900/60 backdrop-blur-md border border-slate-800 rounded-2xl p-6 shadow-xl">
+                  <h3 className="text-xl font-bold text-slate-100 mb-4">Manage Projects</h3>
+                  <p className="text-slate-400">Projects management coming soon.</p>
+                </div>
+              ) : activeTab === 'messages' ? (
+                <div className="bg-slate-900/60 backdrop-blur-md border border-slate-800 rounded-2xl p-6 shadow-xl">
+                  <h3 className="text-xl font-bold text-slate-100 mb-4">Messages</h3>
+                  <p className="text-slate-400">Message center coming soon.</p>
+                </div>
+              ) : null}
+            </div>
           </div>
-          <button 
-            onClick={() => {
-              fetchStats();
-              if (activeTab === 'users') fetchUsers();
-              else if (activeTab === 'reports') fetchReports();
-              else if (activeTab === 'skills') fetchSkillsAnalytics();
-            }}
-            className="self-start sm:self-center px-4 py-2 bg-slate-900 border border-slate-805 hover:bg-slate-800 rounded-xl transition text-slate-400 text-xs font-bold flex items-center gap-1.5 cursor-pointer"
-          >
-            <RefreshCw size={12} /> Refresh Data
-          </button>
-        </div>
+          
+          {/* Right Sidebar Column */}
+          <div className="w-full lg:w-80 shrink-0">
+            <AdminSidebarRight />
+          </div>
 
-        {/* Tab Selector Links */}
-        <div className="flex gap-4 border-b border-slate-900 pb-1">
-          <button
-            onClick={() => setActiveTab('overview')}
-            className={`pb-3 font-extrabold text-sm relative transition duration-200 cursor-pointer ${
-              activeTab === 'overview' 
-                ? 'text-indigo-400 after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-indigo-500' 
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            Overview
-          </button>
-          <button
-            onClick={() => {
-              setActiveTab('users');
-              setUserPage(1);
-            }}
-            className={`pb-3 font-extrabold text-sm relative transition duration-200 cursor-pointer ${
-              activeTab === 'users' 
-                ? 'text-indigo-400 after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-indigo-500' 
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            User Management
-          </button>
-          <button
-            onClick={() => setActiveTab('reports')}
-            className={`pb-3 font-extrabold text-sm relative transition duration-200 cursor-pointer ${
-              activeTab === 'reports' 
-                ? 'text-indigo-400 after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-indigo-500' 
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            Reported Users
-          </button>
-          <button
-            onClick={() => setActiveTab('skills')}
-            className={`pb-3 font-extrabold text-sm relative transition duration-200 cursor-pointer ${
-              activeTab === 'skills' 
-                ? 'text-indigo-400 after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-indigo-500' 
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            Skill Analytics
-          </button>
         </div>
-
-        {/* Tab Body Renderings */}
-        <div className="pt-2">
-          {activeTab === 'overview' && renderOverview()}
-          {activeTab === 'users' && renderUsers()}
-          {activeTab === 'reports' && renderReports()}
-          {activeTab === 'skills' && renderSkills()}
-        </div>
-
       </div>
     </div>
   );

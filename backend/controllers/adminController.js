@@ -35,6 +35,12 @@ export const getStats = async (req, res, next) => {
       count: s.count
     }));
 
+    // Call Analytics from global scope
+    const activeCallsCount = global.activeCallsMap ? Math.ceil(global.activeCallsMap.size / 2) : 0;
+    const totalVideoCalls = global.totalVideoCalls || 0;
+    const totalVoiceCalls = global.totalVoiceCalls || 0;
+    const failedCalls = global.failedCalls || 0;
+
     res.status(200).json({
       totalUsers,
       activeUsers,
@@ -43,7 +49,13 @@ export const getStats = async (req, res, next) => {
       totalPosts,
       totalConnections,
       totalMessages,
-      topSkills
+      topSkills,
+      callStats: {
+        totalVideoCalls,
+        totalVoiceCalls,
+        failedCalls,
+        activeCallsCount
+      }
     });
   } catch (error) {
     next(error);
@@ -168,6 +180,11 @@ export const blockUser = async (req, res, next) => {
       throw new Error('User not found');
     }
 
+    if (user.role === 'master_admin') {
+      res.status(403);
+      throw new Error('Cannot block a master admin');
+    }
+
     user.isActive = false;
     await user.save();
 
@@ -187,6 +204,11 @@ export const unblockUser = async (req, res, next) => {
     if (!user) {
       res.status(404);
       throw new Error('User not found');
+    }
+
+    if (user.role === 'master_admin') {
+      res.status(403);
+      throw new Error('Cannot unblock a master admin');
     }
 
     user.isActive = true;
@@ -212,6 +234,11 @@ export const deleteUser = async (req, res, next) => {
       throw new Error('User not found');
     }
 
+    if (user.role === 'master_admin') {
+      res.status(403);
+      throw new Error('Cannot delete a master admin');
+    }
+
     // Delete user's posts
     await Post.deleteMany({ author: user._id });
 
@@ -235,6 +262,68 @@ export const deleteUser = async (req, res, next) => {
     await user.deleteOne();
 
     res.status(200).json({ success: true, message: 'User deleted successfully' });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Change User Role
+// @route   PUT /api/admin/users/:id/role
+// @access  Private/Admin
+export const changeRole = async (req, res, next) => {
+  try {
+    const user = await User.findById(req.params.id);
+
+    if (!user) {
+      res.status(404);
+      throw new Error('User not found');
+    }
+
+    if (user.role === 'master_admin') {
+      res.status(403);
+      throw new Error('Cannot change the role of a master admin');
+    }
+
+    // Toggle role
+    user.role = user.role === 'admin' ? 'user' : 'admin';
+    await user.save();
+
+    res.status(200).json({ success: true, message: 'User role updated', user });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Send announcement to all users
+// @route   POST /api/admin/announcements
+// @access  Private/Admin (specifically master_admin typically, but we can allow admin too)
+export const sendAnnouncement = async (req, res, next) => {
+  try {
+    const { title, message } = req.body;
+    
+    if (!title || !message) {
+      res.status(400);
+      throw new Error('Title and message are required for announcements');
+    }
+
+    // Since we're keeping it simple, we will fetch all user IDs except the sender
+    const users = await User.find({ _id: { $ne: req.user._id } }).select('_id');
+    
+    const notifications = users.map(u => ({
+      recipient: u._id,
+      sender: req.user._id,
+      type: 'system_announcement',
+      title,
+      message,
+      isRead: false
+    }));
+
+    // Import Notification model dynamically or ensure it's imported at top
+    const { default: Notification } = await import('../models/Notification.js');
+    
+    await Notification.insertMany(notifications);
+
+    res.status(200).json({ success: true, message: `Announcement sent to ${users.length} users.` });
   } catch (error) {
     next(error);
   }

@@ -17,31 +17,35 @@ const CallControls = ({ isMuted, isCameraOff, isScreenSharing, onToggleMute, onT
         {isMuted ? <MicOff size={18} /> : <Mic size={18} />}
       </button>
 
-      {/* Camera On / Off */}
-      <button
-        onClick={onToggleCamera}
-        title={isCameraOff ? 'Turn camera on' : 'Turn camera off'}
-        className={`w-12 h-12 rounded-full border flex items-center justify-center transition cursor-pointer ${
-          isCameraOff
-            ? 'bg-red-500/20 border-red-500/30 text-red-400 hover:bg-red-500/30'
-            : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700'
-        }`}
-      >
-        {isCameraOff ? <VideoOff size={18} /> : <Video size={18} />}
-      </button>
+      {/* Camera On / Off — hidden when voice-only */}
+      {onToggleCamera && (
+        <button
+          onClick={onToggleCamera}
+          title={isCameraOff ? 'Turn camera on' : 'Turn camera off'}
+          className={`w-12 h-12 rounded-full border flex items-center justify-center transition cursor-pointer ${
+            isCameraOff
+              ? 'bg-red-500/20 border-red-500/30 text-red-400 hover:bg-red-500/30'
+              : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700'
+          }`}
+        >
+          {isCameraOff ? <VideoOff size={18} /> : <Video size={18} />}
+        </button>
+      )}
 
-      {/* Screen Share */}
-      <button
-        onClick={onToggleScreenShare}
-        title={isScreenSharing ? 'Stop screen sharing' : 'Share your screen'}
-        className={`w-12 h-12 rounded-full border flex items-center justify-center transition cursor-pointer ${
-          isScreenSharing
-            ? 'bg-indigo-500/30 border-indigo-500/50 text-indigo-300 hover:bg-indigo-500/40'
-            : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700'
-        }`}
-      >
-        {isScreenSharing ? <StopCircle size={18} /> : <Monitor size={18} />}
-      </button>
+      {/* Screen Share — hidden when voice-only */}
+      {onToggleScreenShare && (
+        <button
+          onClick={onToggleScreenShare}
+          title={isScreenSharing ? 'Stop screen sharing' : 'Share your screen'}
+          className={`w-12 h-12 rounded-full border flex items-center justify-center transition cursor-pointer ${
+            isScreenSharing
+              ? 'bg-indigo-500/30 border-indigo-500/50 text-indigo-300 hover:bg-indigo-500/40'
+              : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700'
+          }`}
+        >
+          {isScreenSharing ? <StopCircle size={18} /> : <Monitor size={18} />}
+        </button>
+      )}
 
       {/* End Call */}
       <button

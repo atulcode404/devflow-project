@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useContext } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
 import { LogOut, Users, User, Home, Sparkles, Bell, Search, ShieldAlert } from 'lucide-react';
 import { io } from 'socket.io-client';
@@ -10,6 +10,8 @@ import NotificationToast from './NotificationToast';
 const Navbar = () => {
   const { user, logout } = useContext(AuthContext);
   const navigate = useNavigate();
+  const location = useLocation();
+  const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
 
   // Notification States
   const [notifications, setNotifications] = useState([]);
@@ -87,7 +89,7 @@ const Navbar = () => {
   };
 
   return (
-    <nav className="bg-slate-900 border-b border-slate-800 sticky top-0 z-50 shadow-md">
+    <nav className="bg-brand-bg border-b border-brand-border sticky top-0 z-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-16">
           <div className="flex items-center">
@@ -101,43 +103,42 @@ const Navbar = () => {
             </Link>
           </div>
           
-          <div className="flex items-center space-x-2 sm:space-x-4">
-            <Link 
-              to="/" 
-              className="text-slate-300 hover:text-indigo-400 px-3 py-2 rounded-lg text-sm font-semibold flex items-center gap-1.5 transition duration-200 hover:bg-slate-800/50"
-            >
-              <Home size={16} /> 
-              <span className="hidden sm:inline">Feed</span>
-            </Link>
-            <Link 
-              to="/search" 
-              className="text-slate-300 hover:text-indigo-400 px-3 py-2 rounded-lg text-sm font-semibold flex items-center gap-1.5 transition duration-200 hover:bg-slate-800/50"
-            >
-              <Search size={16} /> 
-              <span className="hidden sm:inline">Search</span>
-            </Link>
-            <Link 
-              to="/connections" 
-              className="text-slate-300 hover:text-indigo-400 px-3 py-2 rounded-lg text-sm font-semibold flex items-center gap-1.5 transition duration-200 hover:bg-slate-800/50"
-            >
-              <Users size={16} /> 
-              <span className="hidden sm:inline">Connections</span>
-            </Link>
-            <Link 
-              to="/profile" 
-              className="text-slate-300 hover:text-indigo-400 px-3 py-2 rounded-lg text-sm font-semibold flex items-center gap-1.5 transition duration-200 hover:bg-slate-800/50"
-            >
-              <User size={16} /> 
-              <span className="hidden sm:inline">Profile</span>
-            </Link>
+          <div className="flex items-center space-x-1 sm:space-x-2">
+            {[
+              { path: '/', icon: Home, label: 'Feed' },
+              { path: '/network', icon: Users, label: 'Network' },
+              { path: '/projects', icon: Sparkles, label: 'Projects' },
+              { path: '/search', icon: Search, label: 'Search' },
+              { path: '/connections', icon: Users, label: 'Connections' },
+            ].map((navItem) => {
+              const isActive = location.pathname === navItem.path;
+              return (
+                <Link 
+                  key={navItem.path}
+                  to={navItem.path} 
+                  className={`flex flex-col items-center justify-center px-3 h-16 border-b-2 transition duration-200 ${
+                    isActive 
+                      ? 'border-brand-primary text-brand-primary' 
+                      : 'border-transparent text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <navItem.icon size={20} className={isActive ? 'fill-brand-primary/20' : ''} /> 
+                  <span className="hidden sm:block text-[10px] mt-1 font-semibold">{navItem.label}</span>
+                </Link>
+              );
+            })}
 
-            {user && user.role === 'admin' && (
+            {(user && (user.role === 'admin' || user.role === 'master_admin')) && (
               <Link 
                 to="/admin" 
-                className="text-slate-300 hover:text-indigo-400 px-3 py-2 rounded-lg text-sm font-semibold flex items-center gap-1.5 transition duration-200 hover:bg-slate-800/50"
+                className={`flex flex-col items-center justify-center px-3 h-16 border-b-2 transition duration-200 ${
+                  location.pathname === '/admin' 
+                    ? 'border-red-500 text-red-500' 
+                    : 'border-transparent text-slate-400 hover:text-slate-200'
+                }`}
               >
-                <ShieldAlert size={16} /> 
-                <span className="hidden sm:inline">Admin</span>
+                <ShieldAlert size={20} /> 
+                <span className="hidden sm:block text-[10px] mt-1 font-semibold">Admin</span>
               </Link>
             )}
 
@@ -146,15 +147,18 @@ const Navbar = () => {
               <div className="relative">
                 <button
                   onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-                  className="text-slate-300 hover:text-indigo-400 p-2 rounded-lg text-sm font-semibold flex items-center transition duration-200 hover:bg-slate-800/50 cursor-pointer relative"
+                  className={`flex flex-col items-center justify-center px-3 h-16 border-b-2 transition duration-200 cursor-pointer relative ${isDropdownOpen ? 'border-brand-primary text-brand-primary' : 'border-transparent text-slate-400 hover:text-slate-200'}`}
                   title="Notifications"
                 >
-                  <Bell size={16} />
-                  {unreadCount > 0 && (
-                    <span className="absolute top-1.5 right-1.5 w-3.5 h-3.5 bg-red-500 border-2 border-slate-900 rounded-full flex items-center justify-center text-[7px] text-white font-extrabold shadow animate-pulse">
-                      {unreadCount}
-                    </span>
-                  )}
+                  <div className="relative">
+                    <Bell size={20} className={isDropdownOpen ? 'fill-brand-primary/20' : ''} />
+                    {unreadCount > 0 && (
+                      <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-red-500 border-2 border-brand-bg rounded-full flex items-center justify-center text-[8px] text-white font-bold shadow-sm">
+                        {unreadCount > 9 ? '9+' : unreadCount}
+                      </span>
+                    )}
+                  </div>
+                  <span className="hidden sm:block text-[10px] mt-1 font-semibold">Alerts</span>
                 </button>
 
                 {isDropdownOpen && (
@@ -169,14 +173,42 @@ const Navbar = () => {
               </div>
             )}
 
-            <div className="border-l border-slate-850 h-5 mx-1 hidden sm:block"></div>
-            <button 
-              onClick={handleLogout}
-              className="text-slate-400 hover:text-red-400 px-3 py-2 rounded-lg text-sm font-semibold flex items-center gap-1.5 transition duration-200 hover:bg-red-500/10 cursor-pointer"
-            >
-              <LogOut size={16} /> 
-              <span className="hidden sm:inline">Logout</span>
-            </button>
+            <div className="border-l border-brand-border h-8 mx-2 hidden sm:block self-center"></div>
+            
+            {/* User Profile Dropdown */}
+            {user && (
+              <div className="relative flex items-center ml-2">
+                <button 
+                  onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)}
+                  className="flex flex-col items-center justify-center h-16 cursor-pointer"
+                >
+                  <img src={user.profilePicture || 'https://via.placeholder.com/150'} alt="Profile" className="w-8 h-8 rounded-full border-2 border-brand-border object-cover" />
+                  <span className="hidden sm:block text-[10px] mt-1 font-semibold text-slate-400 flex items-center">Me ▼</span>
+                </button>
+
+                {isProfileMenuOpen && (
+                  <div className="absolute top-14 right-0 mt-2 w-56 bg-brand-card border border-brand-border rounded-xl shadow-2xl py-2 overflow-hidden z-50">
+                    <div className="px-4 py-3 border-b border-brand-border">
+                      <p className="text-sm font-bold text-slate-100">{user.fullName}</p>
+                      <p className="text-xs text-slate-400 truncate">{user.headline || 'Developer'}</p>
+                    </div>
+                    <Link to={`/profile/${user._id}`} onClick={() => setIsProfileMenuOpen(false)} className="block px-4 py-2 text-sm text-slate-300 hover:bg-white/5 hover:text-white transition">
+                      View Profile
+                    </Link>
+                    <Link to="/profile" onClick={() => setIsProfileMenuOpen(false)} className="block px-4 py-2 text-sm text-slate-300 hover:bg-white/5 hover:text-white transition">
+                      Edit Profile
+                    </Link>
+                    <div className="border-t border-brand-border my-1"></div>
+                    <button 
+                      onClick={handleLogout}
+                      className="w-full text-left px-4 py-2 text-sm text-red-400 hover:bg-white/5 hover:text-red-300 transition"
+                    >
+                      Sign Out
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>

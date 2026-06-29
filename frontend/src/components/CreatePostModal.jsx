@@ -7,9 +7,12 @@ const CreatePostModal = ({ isOpen, onClose, onPostCreated }) => {
     title: '',
     description: '',
     requiredSkills: '',
+    postType: 'Update',
     projectType: 'Side Project',
     experienceLevel: 'Intermediate',
     contactMethod: '',
+    projectLink: '',
+    liveDemoLink: '',
   });
 
   const [loading, setLoading] = useState(false);
@@ -42,9 +45,12 @@ const CreatePostModal = ({ isOpen, onClose, onPostCreated }) => {
         title: '',
         description: '',
         requiredSkills: '',
+        postType: 'Update',
         projectType: 'Side Project',
         experienceLevel: 'Intermediate',
         contactMethod: '',
+        projectLink: '',
+        liveDemoLink: '',
       });
       onClose();
     } catch (err) {
@@ -71,7 +77,7 @@ const CreatePostModal = ({ isOpen, onClose, onPostCreated }) => {
             <div className="p-1 bg-indigo-500/10 text-indigo-400 rounded-lg">
               <Sparkles size={16} />
             </div>
-            <h3 className="font-extrabold text-slate-100 text-base">New Collaboration Post</h3>
+            <h3 className="font-extrabold text-slate-100 text-base">New Post</h3>
           </div>
           <button 
             onClick={onClose}
@@ -89,13 +95,34 @@ const CreatePostModal = ({ isOpen, onClose, onPostCreated }) => {
             </div>
           )}
 
+          {/* Post Type */}
+          <div>
+            <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">Post Type</label>
+            <div className="flex gap-2 bg-slate-950 p-1 rounded-xl">
+              {['Update', 'Project', 'Question', 'Poll'].map(type => (
+                <button
+                  key={type}
+                  type="button"
+                  onClick={() => setFormData({ ...formData, postType: type })}
+                  className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition ${
+                    formData.postType === type 
+                      ? 'bg-indigo-600 text-white shadow-md' 
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+                  }`}
+                >
+                  {type}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Project Title */}
           <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">Project Title</label>
+            <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">{formData.postType === 'Question' ? 'Question Title' : 'Title'}</label>
             <input 
               type="text" 
               name="title"
-              placeholder="e.g. Co-founder for SaaS Startup Idea"
+              placeholder={formData.postType === 'Question' ? 'e.g. How to structure a React app?' : 'e.g. Co-founder for SaaS Startup Idea'}
               className="w-full px-4 py-2.5 bg-slate-950 border border-slate-850 rounded-xl focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none text-slate-100 text-sm transition placeholder-slate-650"
               value={formData.title}
               onChange={handleChange}
@@ -132,36 +159,66 @@ const CreatePostModal = ({ isOpen, onClose, onPostCreated }) => {
             />
           </div>
 
-          {/* Project Type & Experience Level */}
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">Project Type</label>
-              <select
-                name="projectType"
-                className="w-full px-4 py-2.5 bg-slate-950 border border-slate-850 rounded-xl focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none text-slate-100 text-sm transition"
-                value={formData.projectType}
-                onChange={handleChange}
-              >
-                <option value="Side Project">Side Project</option>
-                <option value="Startup">Startup Idea</option>
-                <option value="Hackathon">Hackathon</option>
-                <option value="Open Source">Open Source</option>
-              </select>
+          {/* Conditional Project Links */}
+          {formData.postType === 'Project' && (
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">GitHub Link (Optional)</label>
+                <input 
+                  type="url" 
+                  name="projectLink"
+                  placeholder="https://github.com/..."
+                  className="w-full px-4 py-2.5 bg-slate-950 border border-slate-850 rounded-xl focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none text-slate-100 text-sm transition placeholder-slate-655"
+                  value={formData.projectLink}
+                  onChange={handleChange}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">Live Demo (Optional)</label>
+                <input 
+                  type="url" 
+                  name="liveDemoLink"
+                  placeholder="https://..."
+                  className="w-full px-4 py-2.5 bg-slate-950 border border-slate-850 rounded-xl focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none text-slate-100 text-sm transition placeholder-slate-655"
+                  value={formData.liveDemoLink}
+                  onChange={handleChange}
+                />
+              </div>
             </div>
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">Experience Level</label>
-              <select
-                name="experienceLevel"
-                className="w-full px-4 py-2.5 bg-slate-950 border border-slate-850 rounded-xl focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none text-slate-100 text-sm transition"
-                value={formData.experienceLevel}
-                onChange={handleChange}
-              >
-                <option value="Beginner">Beginner</option>
-                <option value="Intermediate">Intermediate</option>
-                <option value="Advanced">Advanced</option>
-              </select>
+          )}
+
+          {/* Project Type & Experience Level (only for Project/Update) */}
+          {(formData.postType === 'Project' || formData.postType === 'Update') && (
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">Project Type</label>
+                <select
+                  name="projectType"
+                  className="w-full px-4 py-2.5 bg-slate-950 border border-slate-850 rounded-xl focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none text-slate-100 text-sm transition"
+                  value={formData.projectType}
+                  onChange={handleChange}
+                >
+                  <option value="Side Project">Side Project</option>
+                  <option value="Startup">Startup Idea</option>
+                  <option value="Hackathon">Hackathon</option>
+                  <option value="Open Source">Open Source</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">Experience Level</label>
+                <select
+                  name="experienceLevel"
+                  className="w-full px-4 py-2.5 bg-slate-950 border border-slate-850 rounded-xl focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none text-slate-100 text-sm transition"
+                  value={formData.experienceLevel}
+                  onChange={handleChange}
+                >
+                  <option value="Beginner">Beginner</option>
+                  <option value="Intermediate">Intermediate</option>
+                  <option value="Advanced">Advanced</option>
+                </select>
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Contact Method */}
           <div>

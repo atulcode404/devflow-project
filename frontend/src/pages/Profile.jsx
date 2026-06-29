@@ -10,9 +10,16 @@ const Profile = () => {
   const navigate = useNavigate();
   const [formData, setFormData] = useState({
     fullName: '',
+    headline: '',
+    location: '',
+    experienceLevel: 'Intermediate',
+    availability: 'Open to Work',
     bio: '',
     skills: '',
-    githubUsername: ''
+    githubUsername: '',
+    linkedinLink: '',
+    portfolio: '',
+    website: ''
   });
   const [photoFile, setPhotoFile] = useState(null);
   const [photoPreview, setPhotoPreview] = useState(null);
@@ -27,9 +34,16 @@ const Profile = () => {
     if (user) {
       setFormData({
         fullName: user.fullName || '',
+        headline: user.headline || '',
+        location: user.location || '',
+        experienceLevel: user.experienceLevel || 'Intermediate',
+        availability: user.availability || 'Open to Work',
         bio: user.bio || '',
         skills: user.skills ? user.skills.join(', ') : '',
-        githubUsername: user.githubUsername || ''
+        githubUsername: user.githubUsername || '',
+        linkedinLink: user.linkedinLink || '',
+        portfolio: user.portfolio || '',
+        website: user.website || ''
       });
       setPhotoPreview(user.profilePicture || null);
       setBackgroundPreview(user.backgroundPicture || null);
@@ -55,10 +69,11 @@ const Profile = () => {
       setSuccess('GitHub profile synced successfully!');
       
       setFormData({
-        fullName: res.data.user.fullName || '',
-        bio: res.data.user.bio || '',
-        skills: res.data.user.skills ? res.data.user.skills.join(', ') : '',
-        githubUsername: res.data.user.githubUsername || ''
+        ...formData,
+        fullName: res.data.user.fullName || formData.fullName,
+        bio: res.data.user.bio || formData.bio,
+        skills: res.data.user.skills ? res.data.user.skills.join(', ') : formData.skills,
+        githubUsername: res.data.user.githubUsername || formData.githubUsername
       });
       if (res.data.user.profilePicture) {
         setPhotoPreview(res.data.user.profilePicture);
@@ -102,6 +117,32 @@ const Profile = () => {
     setSuccess('');
     
     try {
+      const skillsArray = formData.skills
+        .split(',')
+        .map(s => s.trim())
+        .filter(Boolean);
+
+      if (skillsArray.length > 10) {
+        setError('You can add up to 10 skills only.');
+        setSaving(false);
+        return;
+      }
+
+      const invalidSkill = skillsArray.find(s => s.length > 25);
+      if (invalidSkill) {
+        setError(`Skill "${invalidSkill}" is too long. Max 25 characters per skill.`);
+        setSaving(false);
+        return;
+      }
+
+      // Check for duplicates
+      const uniqueSkills = [...new Set(skillsArray.map(s => s.toLowerCase()))];
+      if (uniqueSkills.length !== skillsArray.length) {
+        setError('Duplicate skills are not allowed.');
+        setSaving(false);
+        return;
+      }
+
       if (photoFile) {
         const uploadData = new FormData();
         uploadData.append('photo', photoFile);
@@ -118,14 +159,9 @@ const Profile = () => {
         });
       }
 
-      const skillsArray = formData.skills
-        .split(',')
-        .map(s => s.trim())
-        .filter(Boolean);
-
       const res = await api.put('/users/profile', {
         ...formData,
-        skills: skillsArray
+        skills: [...new Set(skillsArray)] // ensure exact case is saved but duplicates removed
       });
       
       setUser(res.data);
@@ -184,7 +220,10 @@ const Profile = () => {
           </div>
 
           <div className="flex justify-between items-start mb-2">
-            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-100">{user?.fullName || 'Developer'}</h1>
+            <div>
+              <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-100">{user?.fullName || 'Developer'}</h1>
+              <p className="text-slate-400 text-xs sm:text-sm mt-1">Maintain your professional information so other developers can find and match with you.</p>
+            </div>
             <button 
               onClick={() => navigate('/portfolio')}
               className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition shadow-lg shadow-indigo-950/40"
@@ -192,7 +231,24 @@ const Profile = () => {
               <LayoutTemplate size={16} /> View Auto-Portfolio
             </button>
           </div>
-          <p className="text-slate-400 text-xs sm:text-sm mb-8">Maintain your professional information so other developers can find and match with you.</p>
+
+          {/* Profile Completion */}
+          <div className="mb-8 bg-slate-950 border border-slate-800 rounded-xl p-4">
+            <div className="flex justify-between text-xs font-bold text-slate-400 mb-2">
+              <span>Profile Completion</span>
+              <span className="text-indigo-400">
+                {Math.round(
+                  [formData.fullName, formData.headline, formData.bio, formData.skills, formData.location, formData.githubUsername, formData.linkedinLink].filter(Boolean).length / 7 * 100
+                )}%
+              </span>
+            </div>
+            <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
+              <div 
+                className="h-full bg-gradient-to-r from-indigo-600 to-purple-500 transition-all duration-500"
+                style={{ width: `${Math.round([formData.fullName, formData.headline, formData.bio, formData.skills, formData.location, formData.githubUsername, formData.linkedinLink].filter(Boolean).length / 7 * 100)}%` }}
+              ></div>
+            </div>
+          </div>
 
           {error && (
             <div className="bg-red-500/10 border border-red-500/20 text-red-400 p-4 rounded-xl mb-6 text-xs font-semibold leading-relaxed">
@@ -297,20 +353,25 @@ const Profile = () => {
 
             {/* Skills Inputs */}
             <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5 flex items-center gap-1">
-                <Code size={14} className="text-slate-500" /> Skills (comma separated)
-              </label>
+              <div className="flex justify-between items-center mb-1.5">
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
+                  <Code size={14} className="text-slate-500" /> Skills (comma separated)
+                </label>
+                <span className={`text-[10px] font-bold ${formData.skills.split(',').filter(s => s.trim()).length > 10 ? 'text-red-400' : 'text-slate-500'}`}>
+                  {formData.skills.split(',').filter(s => s.trim()).length}/10 skills added
+                </span>
+              </div>
               <input 
                 type="text" 
                 name="skills"
                 className="w-full px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none text-slate-100 text-sm transition"
                 value={formData.skills}
                 onChange={handleChange}
-                placeholder="e.g. JavaScript, React, Node.js, Mongoose, Python"
+                placeholder="e.g. JavaScript, React, Node.js"
               />
             </div>
 
-            {/* GitHub Profile Section */}
+            {/* Social Links Section */}
             <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 border-t border-slate-800/60 pt-6">
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5 flex items-center gap-1.5">
@@ -320,7 +381,7 @@ const Profile = () => {
                   <input 
                     type="text" 
                     name="githubUsername"
-                    className="flex-1 px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none text-slate-100 text-sm transition placeholder-slate-650"
+                    className="flex-1 px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none text-slate-100 text-sm transition placeholder-slate-600"
                     value={formData.githubUsername}
                     onChange={handleChange}
                     placeholder="e.g. torvalds"
@@ -329,21 +390,123 @@ const Profile = () => {
                     type="button"
                     disabled={syncing}
                     onClick={handleSyncGithub}
-                    className="px-4 py-2 bg-indigo-650 hover:bg-indigo-550 disabled:bg-slate-850 disabled:opacity-50 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer"
+                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 disabled:opacity-50 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer"
                   >
-                    {syncing ? (
-                      <Loader2 size={12} className="animate-spin" />
-                    ) : (
-                      <Sparkles size={12} />
-                    )}
+                    {syncing ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
                     Sync
                   </button>
                 </div>
               </div>
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5 flex items-center gap-1.5">
+                  <Linkedin size={14} className="text-blue-400" /> LinkedIn Profile URL
+                </label>
+                <input 
+                  type="url" 
+                  name="linkedinLink"
+                  className="w-full px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none text-slate-100 text-sm transition placeholder-slate-600"
+                  value={formData.linkedinLink}
+                  onChange={handleChange}
+                  placeholder="https://linkedin.com/in/username"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5 flex items-center gap-1.5">
+                  <LayoutTemplate size={14} className="text-green-400" /> Portfolio URL
+                </label>
+                <input 
+                  type="url" 
+                  name="portfolio"
+                  className="w-full px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none text-slate-100 text-sm transition placeholder-slate-600"
+                  value={formData.portfolio}
+                  onChange={handleChange}
+                  placeholder="https://yourportfolio.com"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5 flex items-center gap-1.5">
+                  <LayoutTemplate size={14} className="text-purple-400" /> Personal Website
+                </label>
+                <input 
+                  type="url" 
+                  name="website"
+                  className="w-full px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none text-slate-100 text-sm transition placeholder-slate-600"
+                  value={formData.website}
+                  onChange={handleChange}
+                  placeholder="https://yourwebsite.com"
+                />
+              </div>
+            </div>
+
+            {/* Social Links Section */}
+            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 border-t border-slate-800/60 pt-6">
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5 flex items-center gap-1.5">
+                  <Github size={14} className="text-indigo-400" /> GitHub Username
+                </label>
+                <div className="flex gap-2">
+                  <input 
+                    type="text" 
+                    name="githubUsername"
+                    className="flex-1 px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none text-slate-100 text-sm transition placeholder-slate-600"
+                    value={formData.githubUsername}
+                    onChange={handleChange}
+                    placeholder="e.g. torvalds"
+                  />
+                  <button
+                    type="button"
+                    disabled={syncing}
+                    onClick={handleSyncGithub}
+                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 disabled:opacity-50 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer"
+                  >
+                    {syncing ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+                    Sync
+                  </button>
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5 flex items-center gap-1.5">
+                  <Linkedin size={14} className="text-blue-400" /> LinkedIn Profile URL
+                </label>
+                <input 
+                  type="url" 
+                  name="linkedinLink"
+                  className="w-full px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none text-slate-100 text-sm transition placeholder-slate-600"
+                  value={formData.linkedinLink}
+                  onChange={handleChange}
+                  placeholder="https://linkedin.com/in/username"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5 flex items-center gap-1.5">
+                  <LayoutTemplate size={14} className="text-green-400" /> Portfolio URL
+                </label>
+                <input 
+                  type="url" 
+                  name="portfolio"
+                  className="w-full px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none text-slate-100 text-sm transition placeholder-slate-600"
+                  value={formData.portfolio}
+                  onChange={handleChange}
+                  placeholder="https://yourportfolio.com"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5 flex items-center gap-1.5">
+                  <LayoutTemplate size={14} className="text-purple-400" /> Personal Website
+                </label>
+                <input 
+                  type="url" 
+                  name="website"
+                  className="w-full px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none text-slate-100 text-sm transition placeholder-slate-600"
+                  value={formData.website}
+                  onChange={handleChange}
+                  placeholder="https://yourwebsite.com"
+                />
+              </div>
             </div>
 
             {/* Submit Button */}
-            <div className="pt-4 flex justify-end border-t border-slate-850">
+            <div className="pt-4 flex justify-end border-t border-slate-850 mt-6">
               <button 
                 type="submit" 
                 disabled={saving}
@@ -366,7 +529,7 @@ const Profile = () => {
 
       {/* GitHub Card Preview */}
       {user?.githubProfile && (
-        <div className="max-w-3xl mx-auto mt-8">
+        <div className="max-w-3xl mx-auto mt-8 mb-10">
           <h3 className="text-lg font-bold text-slate-200 mb-4 flex items-center gap-2 px-4">
             <Github size={18} className="text-indigo-400" /> Connected GitHub Profile
           </h3>

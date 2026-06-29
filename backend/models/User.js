@@ -27,9 +27,56 @@ const userSchema = new mongoose.Schema({
     maxlength: 500,
     default: '',
   },
+  headline: {
+    type: String,
+    maxlength: 100,
+    default: '',
+  },
+  experience: {
+    type: Array,
+    default: [],
+  },
+  education: {
+    type: Array,
+    default: [],
+  },
+  projects: {
+    type: Array,
+    default: [],
+  },
+  portfolio: {
+    type: String,
+    default: '',
+  },
+  followers: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  }],
+  following: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  }],
+  lastSeen: {
+    type: Date,
+    default: Date.now,
+  },
+  isOnline: {
+    type: Boolean,
+    default: false,
+  },
+  profileViews: {
+    type: Number,
+    default: 0,
+  },
   skills: {
     type: [String],
     default: [],
+    validate: {
+      validator: function(v) {
+        return v.length <= 10;
+      },
+      message: 'You can add up to 10 skills only.'
+    },
     index: true, // Index for faster matching queries
   },
   profilePicture: {
@@ -45,6 +92,10 @@ const userSchema = new mongoose.Schema({
     default: '',
   },
   linkedinLink: {
+    type: String,
+    default: '',
+  },
+  website: {
     type: String,
     default: '',
   },
@@ -105,8 +156,8 @@ const userSchema = new mongoose.Schema({
   },
   availability: {
     type: String,
-    enum: ['Full-time', 'Part-time', 'Freelance', 'Not Available'],
-    default: 'Full-time',
+    enum: ['Open to Work', 'Hiring', 'Busy', 'Available for Freelance'],
+    default: 'Open to Work',
   },
   githubProfile: {
     type: Object,
@@ -130,7 +181,7 @@ const userSchema = new mongoose.Schema({
   },
   role: {
     type: String,
-    enum: ['user', 'admin'],
+    enum: ['user', 'admin', 'master_admin'],
     default: 'user',
   },
   isActive: {

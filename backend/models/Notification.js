@@ -20,7 +20,8 @@ const notificationSchema = new mongoose.Schema({
       'message_received', 
       'profile_viewed', 
       'post_liked', 
-      'post_commented'
+      'post_commented',
+      'system_announcement'
     ],
   },
   title: {

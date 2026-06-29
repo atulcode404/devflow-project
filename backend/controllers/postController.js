@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import Post from '../models/Post.js';
 import User from '../models/User.js';
 import { createNotification } from '../utils/createNotification.js';
@@ -8,18 +9,20 @@ import { calculateReputation } from '../services/reputationService.js';
 // @access  Private
 export const createPost = async (req, res, next) => {
   try {
-    const { title, description, requiredSkills, projectType, experienceLevel, contactMethod } = req.body;
+    const { title, description, content, images, requiredSkills, projectType, experienceLevel, contactMethod } = req.body;
     const authorId = req.user._id;
 
-    if (!title || !description || !projectType || !experienceLevel || !contactMethod) {
+    if (!content && !description && !title) {
       res.status(400);
-      throw new Error('Please fill in all required fields');
+      throw new Error('Post must have either content, title, or description');
     }
 
     const post = await Post.create({
       author: authorId,
       title,
       description,
+      content,
+      images: images || [],
       requiredSkills: requiredSkills || [],
       projectType,
       experienceLevel,
@@ -58,8 +61,13 @@ export const getPosts = async (req, res, next) => {
 
     const posts = await Post.find(query)
       .sort({ createdAt: -1 })
+      .limit(50)
       .populate('author', 'fullName profilePicture skills')
-      .populate('comments.user', 'fullName profilePicture');
+      .populate({
+        path: 'comments.user',
+        select: 'fullName profilePicture'
+      })
+      .lean();
 
     res.status(200).json(posts);
   } catch (error) {
@@ -237,5 +245,93 @@ export const addComment = async (req, res, next) => {
     res.status(201).json(populatedPost.comments);
   } catch (error) {
     next(error);
+  }
+};
+
+// @desc    Get posts by user
+// @route   GET /api/posts/user/:identifier
+// @access  Public
+export const getPostsByUser = async (req, res, next) => {
+  try {
+    const identifier = req.params.identifier;
+    // Protect against literal "undefined" string
+    if (!identifier || identifier === 'undefined') {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const query = {
+      $or: [
+        { username: identifier }
+      ]
+    };
+
+    if (mongoose.Types.ObjectId.isValid(identifier)) {
+      query.$or.push({ _id: identifier });
+    }
+
+    const user = await User.findOne(query);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const posts = await Post.find({ author: user._id })
+      .sort({ createdAt: -1 })
+      .populate('author', 'fullName username profilePicture headline')
+      .populate('comments.user', 'fullName username profilePicture');
+
+    res.json(posts);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error getting user posts' });
+  }
+};
+
+// @desc    Save a post
+// @route   POST /api/posts/:id/save
+// @access  Private
+export const savePost = async (req, res, next) => {
+  try {
+    const post = await Post.findById(req.params.id);
+    if (!post) {
+      return res.status(404).json({ message: 'Post not found' });
+    }
+
+    const userId = req.user._id;
+    const isSaved = post.saves.includes(userId);
+
+    if (isSaved) {
+      post.saves.pull(userId);
+    } else {
+      post.saves.push(userId);
+    }
+
+    await post.save();
+    res.json(post.saves);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error saving post' });
+  }
+};
+
+// @desc    Share a post
+// @route   POST /api/posts/:id/share
+// @access  Private
+export const sharePost = async (req, res, next) => {
+  try {
+    const post = await Post.findById(req.params.id);
+    if (!post) {
+      return res.status(404).json({ message: 'Post not found' });
+    }
+
+    const userId = req.user._id;
+    
+    // Simplistic share functionality (just increment tracking for now)
+    // A real implementation would create a new post object referencing the original
+    if (!post.shares.includes(userId)) {
+      post.shares.push(userId);
+      await post.save();
+    }
+
+    res.json(post.shares);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error sharing post' });
   }
 };

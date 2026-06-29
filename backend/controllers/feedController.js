@@ -89,3 +89,58 @@ export const getFeed = async (req, res, next) => {
     next(error);
   }
 };
+
+// @desc    Get real-time feed statistics
+// @route   GET /api/feed/stats
+// @access  Private
+export const getFeedStats = async (req, res, next) => {
+  try {
+    const importPost = await import('../models/Post.js');
+    const Post = importPost.default;
+
+    // 1. Active Developers (Users excluding admins)
+    const activeDevelopers = await User.countDocuments({ role: { $nin: ['admin', 'master_admin'] } });
+
+    // 2. Projects Shared (Posts where postType is 'Project')
+    const projectsShared = await Post.countDocuments({ postType: 'Project' });
+
+    // 3. Discussions (Total comments across all posts + posts of type 'Question' or 'Discussion')
+    const discussionsResult = await Post.aggregate([
+      { $project: { numComments: { $size: { $ifNull: ["$comments", []] } } } },
+      { $group: { _id: null, total: { $sum: "$numComments" } } }
+    ]);
+    const totalComments = discussionsResult.length > 0 ? discussionsResult[0].total : 0;
+    const totalQuestions = await Post.countDocuments({ postType: 'Question' });
+    const discussions = totalComments + totalQuestions;
+
+    // 4. Trending Skills (Top 2 from users)
+    const topSkillsResult = await User.aggregate([
+      { $unwind: "$skills" },
+      // normalize to title case
+      { $project: { skill: { $toLower: "$skills" } } },
+      { $group: { _id: "$skill", count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+      { $limit: 2 }
+    ]);
+    
+    // Capitalize top skills
+    const formatSkill = (str) => str ? str.charAt(0).toUpperCase() + str.slice(1) : '';
+    const trendingSkills = topSkillsResult.length === 2 
+      ? `${formatSkill(topSkillsResult[0]._id)} & ${formatSkill(topSkillsResult[1]._id)}`
+      : topSkillsResult.length === 1 ? formatSkill(topSkillsResult[0]._id) : 'React & AI';
+
+    res.json({
+      success: true,
+      data: {
+        activeDevelopers,
+        projectsShared,
+        discussions,
+        trendingSkills
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching feed stats:', error);
+    next(error);
+  }
+};
+

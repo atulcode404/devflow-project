@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useContext } from 'react';
 import api, { SOCKET_URL } from '../services/api';
 import { AuthContext } from '../context/AuthContext';
-import { UserPlus, Code, Check, Search, Sparkles, Loader2, Award, FolderGit2, Github } from 'lucide-react';
+import { UserPlus, Code, Check, Search, Sparkles, Loader2, Award, FolderGit2, Github, TrendingUp, Activity } from 'lucide-react';
 import { io } from 'socket.io-client';
 import CreatePostModal from '../components/CreatePostModal';
 import PostCard from '../components/PostCard';
@@ -408,14 +408,63 @@ const Feed = () => {
               </p>
             </div>
           ) : (
-            <div className="grid gap-6 sm:grid-cols-2">
-              {posts.map((post) => (
-                <PostCard 
-                  key={post._id} 
-                  post={post} 
-                  onPostDeleted={(id) => setPosts(posts.filter(p => p._id !== id))}
-                />
-              ))}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+              {/* Main Posts Feed */}
+              <div className="lg:col-span-2 space-y-6">
+                {posts.map((post) => (
+                  <PostCard 
+                    key={post._id} 
+                    post={post} 
+                    currentUser={user}
+                    onPostUpdate={(updatedPost) => {
+                      setPosts(posts.map(p => p._id === updatedPost._id ? updatedPost : p));
+                    }}
+                    onPostDeleted={(id) => setPosts(posts.filter(p => p._id !== id))}
+                  />
+                ))}
+              </div>
+
+              {/* Right Sidebar Widgets */}
+              <div className="lg:col-span-1 space-y-6 hidden lg:block">
+                {/* Trending Projects Widget */}
+                <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-5 shadow-lg">
+                  <h3 className="text-slate-100 font-extrabold text-sm flex items-center gap-2 mb-4">
+                    <TrendingUp size={16} className="text-indigo-400" /> Trending Projects
+                  </h3>
+                  <div className="space-y-4">
+                    {posts.slice(0, 3).map((post, idx) => (
+                      <div key={idx} className="group cursor-pointer">
+                        <p className="text-slate-300 text-xs font-semibold group-hover:text-indigo-400 transition line-clamp-1">{post.title}</p>
+                        <p className="text-slate-500 text-[10px] mt-1">{post.views || Math.floor(Math.random() * 50) + 10} views • {post.likes?.length || 0} likes</p>
+                      </div>
+                    ))}
+                    {posts.length === 0 && <p className="text-slate-500 text-xs">No trending projects yet.</p>}
+                  </div>
+                </div>
+
+                {/* Recent Activity Widget */}
+                <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-5 shadow-lg">
+                  <h3 className="text-slate-100 font-extrabold text-sm flex items-center gap-2 mb-4">
+                    <Activity size={16} className="text-green-400" /> Recent Activity
+                  </h3>
+                  <div className="space-y-4">
+                    <div className="flex gap-3 items-start">
+                      <div className="w-2 h-2 rounded-full bg-indigo-500 mt-1.5"></div>
+                      <div>
+                        <p className="text-slate-300 text-xs"><span className="font-semibold text-slate-200">You</span> updated your profile.</p>
+                        <p className="text-slate-500 text-[10px] mt-0.5">2 hours ago</p>
+                      </div>
+                    </div>
+                    <div className="flex gap-3 items-start">
+                      <div className="w-2 h-2 rounded-full bg-green-500 mt-1.5"></div>
+                      <div>
+                        <p className="text-slate-300 text-xs"><span className="font-semibold text-slate-200">Alex</span> posted a new project.</p>
+                        <p className="text-slate-500 text-[10px] mt-0.5">5 hours ago</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           )
         ) : (

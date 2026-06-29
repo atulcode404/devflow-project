@@ -8,13 +8,19 @@ const postSchema = new mongoose.Schema({
   },
   title: {
     type: String,
-    required: [true, 'Please add a project title'],
     trim: true,
   },
   description: {
     type: String,
-    required: [true, 'Please add a project description'],
     trim: true,
+  },
+  content: {
+    type: String,
+    trim: true,
+  },
+  images: {
+    type: [String],
+    default: [],
   },
   requiredSkills: {
     type: [String],
@@ -36,19 +42,33 @@ const postSchema = new mongoose.Schema({
     type: [String],
     default: [],
   },
+  postType: {
+    type: String,
+    enum: ['Update', 'Project', 'Question', 'Poll'],
+    default: 'Update',
+  },
+  projectLink: {
+    type: String,
+    trim: true,
+  },
+  liveDemoLink: {
+    type: String,
+    trim: true,
+  },
+  views: {
+    type: Number,
+    default: 0,
+  },
   projectType: {
     type: String,
-    required: [true, 'Please specify the project type'],
     enum: ['Startup', 'Hackathon', 'Open Source', 'Side Project'],
   },
   experienceLevel: {
     type: String,
-    required: [true, 'Please specify the required experience level'],
     enum: ['Beginner', 'Intermediate', 'Advanced'],
   },
   contactMethod: {
     type: String,
-    required: [true, 'Please add a contact method (e.g. Email, Discord, Chat)'],
     trim: true,
   },
   status: {
@@ -58,6 +78,14 @@ const postSchema = new mongoose.Schema({
     default: 'open',
   },
   likes: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+  }],
+  shares: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+  }],
+  saves: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
   }],
