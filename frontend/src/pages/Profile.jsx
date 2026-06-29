@@ -510,7 +510,7 @@ const Profile = () => {
               <button 
                 type="submit" 
                 disabled={saving}
-                className="bg-indigo-650 hover:bg-indigo-550 border border-indigo-500/20 text-white font-bold py-2.5 px-6 rounded-xl transition duration-200 flex items-center justify-center gap-2 text-sm shadow-md shadow-indigo-950/20 disabled:opacity-75"
+                className="bg-indigo-600 hover:bg-indigo-500 border border-indigo-500/20 text-white font-bold py-2.5 px-6 rounded-xl transition duration-200 flex items-center justify-center gap-2 text-sm shadow-md shadow-indigo-950/20 disabled:opacity-75 cursor-pointer"
               >
                 {saving ? (
                   <>

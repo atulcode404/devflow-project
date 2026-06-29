@@ -38,11 +38,27 @@ const getAllowedOrigins = () => {
   return clientUrl.split(',').map(u => u.trim());
 };
 
+const allowedOrigins = [
+  "https://devflow-project-b978.vercel.app",
+  "https://devflow-project-liard.vercel.app",
+  ...getAllowedOrigins()
+];
+
 // Express middleware
 app.use(cors({
-  origin: process.env.CLIENT_URL || 'http://localhost:5173',
+  origin: function(origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
   credentials: true,
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"]
 }));
+
+app.options("*", cors());
 app.use(express.json());
 app.use(cookieParser());
 
